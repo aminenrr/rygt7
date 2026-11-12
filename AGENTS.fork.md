@@ -68,3 +68,23 @@ Build order chosen: UI-hires + precompile quick win first (branch `ui-hires-prec
 - rygt7 main 1b48f3e (2026-11-12), shadgt7 main 5709ff8.
 - Open upstream PR #34: Advanced page for the renderer's switches (launcher 0.1.2).
 - Latest release: RyGT7-2026-11-07 (no shader-cache toggles; those landed 2026-11-08).
+
+## Changes on ui-hires-precompile
+
+Branches: aminenrr/rygt7 `ui-hires-precompile` (launcher, CI) and aminenrr/shadgt7 `ui-hires-precompile` (renderer). Both features are separate toggles, off by default.
+
+**UI at screen resolution (UI-HIRES, ported from RyGTS patch 0062)**
+- Renderer (shadgt7): new `src/video_core/renderer_vulkan/vk_ui_hires.h` and `vk_native_ui.h`; hooks in `vk_rasterizer_native.{h,cpp}` (PrepareUiTarget, ResolveUiDisplay, SyncUiReads/SyncUiRange, OnUnmap, ResolveDraw, fast-clear eliminate, FindDisplay(output_size) -> TakeFrame), `vk_rasterizer.cpp` (Prepare/Apply in Draw/DrawIndirect, BeforeDispatch, ScaleViewport in UpdateViewportScissorState), `vk_presenter.{h,cpp}` (shows the proxy, skips DLSS/FSR for it; PrepareBlankFrame takes an optional frame), `ryty_gpu/ryty_dlss.{h,cpp}` (CanScale/ScaleInto via Streamline or the plugin).
+- Switch: `GPU.ui_hires` in user\custom_configs\CUSA03220.json or env `RYGT_UI_HIRES=1` (`=0` forces off). Off while the GT7-UW ultrawide HUD split is on.
+- Not ported: RyGTS's HDR UI layer, GT Sport's GTS-009 4K UI image patch (GT7's own 4K UI asset flag is a possible next step).
+- Launcher: Graphics > Upscaling checkbox "Draw the UI at screen resolution" (`GPU.ui_hires`), sets `RYGT_UI_HIRES=1` at launch when checked.
+
+**Precompile quick win (compile pack)**
+- Launcher: Graphics > Rendering option renamed "Precompile shaders at start (compile pack; also turns on shader objects)" (`GPU.compile_pack`) with a hint. When checked it sets `RYGT_COMPILE_PACK=1` and also `RYGT_SHADER_OBJECT=1` unless that env var is already set.
+- Caveat (vk_instance.cpp FIX-GT7-136/147): shader objects were turned off after AMD crash reports and missing pieces of small garage icons on an RTX 4070; the renderer falls back to pipelines for one run after a device loss with shader objects (SO-012).
+
+**CI**
+- `.github/workflows/rygt7-ci.yml`: runs on pushes to `ui-hires-precompile`; checks out/fetches aminenrr/rygt7; resolves the renderer head of aminenrr/shadgt7 `ui-hires-precompile` (git ls-remote).
+- `ci/rygt7/registry_ci.py`, `ci/rygt7/build-windows.ps1`: repositories/branch from `RYGT7_SOURCE_REPO`, `RYGT7_RENDERER_REPO`, `RYGT7_RENDERER_BRANCH` (official defaults when unset).
+- `build-support/renderer.json`: pins https://github.com/aminenrr/shadgt7.git branch `ui-hires-precompile`.
+- Code signing needs no secret: without CODESIGN_* it signs with an ephemeral self-signed certificate.
