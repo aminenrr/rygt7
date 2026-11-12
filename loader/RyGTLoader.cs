@@ -1781,6 +1781,13 @@ namespace RyGT
             upscaling.Controls.Add(comboRow("Quality", quality, qualityNote));
             upscaling.Controls.Add(qualityNote);
             var rcas = AddOption(upscaling, "Sharpening (FSR)", "GPU", "rcas_enabled", true);
+            // UI-HIRES (ported from RyGTS): the scene is scaled to the window first (DLSS when it is
+            // on, else a smooth scale) and the menus and HUD are drawn over it at the window's size
+            // instead of being scaled up with the 1080p picture. GPU.ui_hires; the game gets it as
+            // RYGT_UI_HIRES=1 (the renderer also reads the setting itself). Off by default.
+            AddOption(upscaling, "Draw the UI at screen resolution", "GPU", "ui_hires", false);
+            upscaling.Controls.Add(Hint("Sharper menus and HUD on screens bigger than 1080p: the UI is drawn at your window's size over the upscaled picture. " +
+                                        "Experimental; off with the ultrawide HUD layout. Turn it off if the UI looks wrong."));
 
             // NVIDIA files: the Download button, the status of what is there, and Add from a folder.
             var dlssStatus = noteLabel();
@@ -2232,8 +2239,13 @@ namespace RyGT
             graphics.Controls.Add(Hint("Can crash RX 6000 series GPUs when loading into a race. If the game crashes when a race loads, turn this off."));
             // PERF-GT7-111/117: shader pre-translation (RYGT_MANIFEST_RECORD / RYGT_MANIFEST_PRETRANSLATE).
             AddOption(graphics, "Rebuild translated shaders in the background after a renderer update (about 30 MB a track)", "GPU", "shader_pretranslate", false);
-            // PERF-GT7-108: the compile pack (RYGT_COMPILE_PACK).
-            AddOption(graphics, "Compile the shaders already seen on this PC at start, after a driver update (background, pauses in races)", "GPU", "compile_pack", false);
+            // PERF-GT7-108: the compile pack (RYGT_COMPILE_PACK). Recording the pack and compiling it at
+            // start need shader objects, off by default since FIX-GT7-147, so the game also gets
+            // RYGT_SHADER_OBJECT=1 with it (unless that is already set); without it the option did nothing.
+            AddOption(graphics, "Precompile shaders at start (compile pack; also turns on shader objects)", "GPU", "compile_pack", false);
+            graphics.Controls.Add(Hint("Keeps the shaders this PC has seen and compiles them in the background at start (for example after a driver update), so races stutter less. " +
+                                       "It turns on shader objects, which were off by default because of known issues: small icons in the garage's car interiors can lose pieces (seen on an RTX 4070), " +
+                                       "and crashes were reported on AMD GPUs. If you see either, turn this off."));
             fpsLock.SelectedIndexChanged += delegate
             {
                 try { WriteSetting("GPU", "race_fps_lock", fpsLock.SelectedIndex == 1 ? 60 : 30); }
@@ -3937,8 +3949,19 @@ namespace RyGT
                         // PERF-GT7-108 from the Graphics page: the pipelines this PC's driver cache lacks (after
                         // a driver update) are compiled at start from the recipes kept in the compile pack.
                         // Only when checked: Jouer-Compile-Pack.cmd sets it itself before starting this launcher.
+                        // The pack is recorded and compiled only with shader objects (FIX-GT7-136/147: off
+                        // by default), so the option turns them on too; a value already set (a launcher
+                        // script, the user's environment) is kept.
                         if (GpuSetting(root, "compile_pack") is bool && (bool)GpuSetting(root, "compile_pack"))
+                        {
                             start.EnvironmentVariables["RYGT_COMPILE_PACK"] = "1";
+                            if (string.IsNullOrEmpty(start.EnvironmentVariables["RYGT_SHADER_OBJECT"]))
+                                start.EnvironmentVariables["RYGT_SHADER_OBJECT"] = "1";
+                        }
+                        // UI-HIRES from the Graphics page: the UI drawn at the window's size. Only when
+                        // checked, so a launcher script's own value stays.
+                        if (GpuSetting(root, "ui_hires") is bool && (bool)GpuSetting(root, "ui_hires"))
+                            start.EnvironmentVariables["RYGT_UI_HIRES"] = "1";
                         // DLSS frame multiplier from the Graphics page (generated frames, 1-5).
                         start.EnvironmentVariables["RYGT_DLSSG_FRAMES"] = DlssgFrames(root).ToString();
                         // Upscaling quality from the Graphics page (the size DLSS and FSR 3.1 scale to).
