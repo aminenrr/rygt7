@@ -1,8 +1,10 @@
 name: RyGT7 CI package
-run-name: RyGT7 main CI build
+run-name: RyGT7 CI build (${{ github.ref_name }})
+# Fork branch ui-hires-precompile: builds this fork's source with the renderer from
+# aminenrr/shadgt7 branch ui-hires-precompile (FORK_* below; the official repositories otherwise).
 on:
   push:
-    branches: [main]
+    branches: [main, ui-hires-precompile]
   workflow_call:
     inputs:
       renderer_sha:
@@ -36,6 +38,10 @@ on:
       - ci/rygt7/**
 permissions:
   contents: read
+env:
+  FORK_SOURCE_REPO: aminenrr/rygt7
+  FORK_RENDERER_REPO: aminenrr/shadgt7
+  FORK_RENDERER_BRANCH: ui-hires-precompile
 concurrency:
   group: rygt7-main-package-${{ github.ref }}
   cancel-in-progress: false
@@ -50,8 +56,8 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          repository: RyGT-Team/rygt7
-          ref: ${{ github.repository == 'RyGT-Team/rygt7' && (github.event_name == 'push' || github.event_name == 'pull_request') && github.sha || inputs.source_sha || 'main' }}
+          repository: ${{ env.FORK_SOURCE_REPO }}
+          ref: ${{ inputs.source_sha || github.sha }}
           persist-credentials: false
       - name: Select exact GitHub runtime revision
         id: controller
@@ -67,7 +73,17 @@ jobs:
           SOURCE_OVERRIDE_SHA: ${{ steps.controller.outputs.commit }}
           RENDERER_OVERRIDE_SHA: ${{ inputs.renderer_sha }}
           FORCE_BUILD: ${{ github.event_name == 'pull_request' || inputs.force }}
-        run: python3 ci/rygt7/registry_ci.py resolve
+          RYGT7_SOURCE_REPO: ${{ env.FORK_SOURCE_REPO }}
+          RYGT7_RENDERER_REPO: ${{ env.FORK_RENDERER_REPO }}
+        run: |
+          set -euo pipefail
+          # The fork's renderer branch head, resolved once here (registry_ci resolves main or a SHA).
+          if [ -z "${RENDERER_OVERRIDE_SHA}" ]; then
+            RENDERER_OVERRIDE_SHA="$(git ls-remote "https://github.com/${RYGT7_RENDERER_REPO}.git" "refs/heads/${FORK_RENDERER_BRANCH}" | cut -f1)"
+            [[ "$RENDERER_OVERRIDE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Renderer branch ${FORK_RENDERER_BRANCH} not found"; exit 1; }
+            export RENDERER_OVERRIDE_SHA
+          fi
+          python3 ci/rygt7/registry_ci.py resolve
   tests:
     needs: source
     if: needs.source.outputs.needed == 'true'
@@ -82,7 +98,7 @@ jobs:
           set -euo pipefail
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           git init source
-          git -C source remote add origin https://github.com/RyGT-Team/rygt7.git
+          git -C source remote add origin "https://github.com/${FORK_SOURCE_REPO}.git"
           git -C source fetch --depth=1 origin "$SOURCE_SHA"
           git -C source checkout --detach FETCH_HEAD
           test "$(git -C source rev-parse HEAD)" = "$SOURCE_SHA"
@@ -113,7 +129,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          repository: RyGT-Team/rygt7
+          repository: ${{ env.FORK_SOURCE_REPO }}
           ref: ${{ needs.source.outputs.controller_commit }}
           persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
@@ -139,7 +155,7 @@ jobs:
           git -C C:/rygt7-ci/source init
           if ($LASTEXITCODE) { throw 'git init failed' }
           git -C C:/rygt7-ci/source config core.longpaths true
-          git -C C:/rygt7-ci/source remote add origin https://github.com/RyGT-Team/rygt7.git
+          git -C C:/rygt7-ci/source remote add origin "https://github.com/$($env:FORK_SOURCE_REPO).git"
           if ($LASTEXITCODE) { throw 'git remote failed' }
           git -C C:/rygt7-ci/source fetch --depth=1 origin $env:SOURCE_SHA
           if ($LASTEXITCODE) { throw 'GitHub fetch failed' }
@@ -155,14 +171,21 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           . ./ci/rygt7/setup-tools.ps1
+          $env:RYGT7_SOURCE_REPO = $env:FORK_SOURCE_REPO
+          $env:RYGT7_RENDERER_REPO = $env:FORK_RENDERER_REPO
+          $env:RYGT7_RENDERER_BRANCH = $env:FORK_RENDERER_BRANCH
           & ./ci/rygt7/build-windows.ps1 -SourceRoot C:/rygt7-ci/source -SourceSha $env:SOURCE_SHA -RendererSha $env:RENDERER_SHA -OutputRoot C:/rygt7-ci/build -MsysRoot $env:MSYS2_ROOT
           $env:GT7_SOURCE_ROOT = 'C:/rygt7-ci/source'
           $env:GT7_RENDERER_ROOT = 'C:/rygt7-ci/build/renderer-source'
+          # The controller's own tests expect the official repositories.
+          Remove-Item Env:RYGT7_SOURCE_REPO, Env:RYGT7_RENDERER_REPO, Env:RYGT7_RENDERER_BRANCH
           python -m unittest discover -s ci/rygt7 -p 'test_*.py'
           if ($LASTEXITCODE) { throw 'Build adapter regression tests failed' }
           python -m unittest discover -s ci/rygt7/tests -p 'test_*.py'
           if ($LASTEXITCODE) { throw 'Package controller regression tests failed' }
           $env:ARTIFACT_DIR = 'C:/rygt7-ci/build/dist'
+          $env:RYGT7_SOURCE_REPO = $env:FORK_SOURCE_REPO
+          $env:RYGT7_RENDERER_REPO = $env:FORK_RENDERER_REPO
           python ci/rygt7/registry_ci.py validate
           if ($LASTEXITCODE) { throw 'Windows package validation failed' }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -181,7 +204,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          repository: RyGT-Team/rygt7
+          repository: ${{ env.FORK_SOURCE_REPO }}
           ref: ${{ needs.source.outputs.controller_commit }}
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
@@ -189,6 +212,9 @@ jobs:
           name: rygt7-windows-${{ needs.source.outputs.commit }}-renderer-${{ needs.source.outputs.renderer_commit }}
           path: dist/
       - name: Independently validate package and provenance
+        env:
+          RYGT7_SOURCE_REPO: ${{ env.FORK_SOURCE_REPO }}
+          RYGT7_RENDERER_REPO: ${{ env.FORK_RENDERER_REPO }}
         run: python3 ci/rygt7/registry_ci.py validate
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         id: package_artifact
@@ -207,9 +233,9 @@ jobs:
           {
             echo '### Verified CI artifact'
             echo
-            echo "Source: [\`$SOURCE_SHA\`](https://github.com/RyGT-Team/rygt7/commit/$SOURCE_SHA)"
+            echo "Source: [\`$SOURCE_SHA\`](https://github.com/$FORK_SOURCE_REPO/commit/$SOURCE_SHA)"
             echo
-            echo "Renderer: [\`$RENDERER_SHA\`](https://github.com/RyGT-Team/shadgt7/commit/$RENDERER_SHA)"
+            echo "Renderer: [\`$RENDERER_SHA\`](https://github.com/$FORK_RENDERER_REPO/commit/$RENDERER_SHA)"
             echo
             echo "[Download artifact]($ARTIFACT_URL)"
             echo
