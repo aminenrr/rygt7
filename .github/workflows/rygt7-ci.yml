@@ -4,7 +4,7 @@ run-name: RyGT7 CI build (${{ github.ref_name }})
 # aminenrr/shadgt7 branch ui-hires-precompile (FORK_* below; the official repositories otherwise).
 on:
   push:
-    branches: [main, ui-hires-precompile]
+    branches: [main, ui-hires-precompile, round2]
   workflow_call:
     inputs:
       renderer_sha:
@@ -41,7 +41,7 @@ permissions:
 env:
   FORK_SOURCE_REPO: aminenrr/rygt7
   FORK_RENDERER_REPO: aminenrr/shadgt7
-  FORK_RENDERER_BRANCH: ui-hires-precompile
+  FORK_RENDERER_BRANCH: ${{ github.ref_name == 'round2' && 'round2' || 'ui-hires-precompile' }}
 concurrency:
   group: rygt7-main-package-${{ github.ref }}
   cancel-in-progress: false
