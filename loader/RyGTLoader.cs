@@ -707,6 +707,8 @@ namespace RyGT
         public int TickFrequency = 10, SmallChange = 1, LargeChange = 10;
         /// Shown after the value ("%").
         public string Suffix = "";
+        /// False when a number box beside the slider shows the value.
+        public bool ShowValue = true;
         public event EventHandler ValueChanged;
 
         public Slider()
@@ -735,7 +737,14 @@ namespace RyGT
             }
         }
 
-        Rectangle Track { get { return new Rectangle(8, Height / 2 - 1, Math.Max(10, Width - 8 - 64), 2); } }
+        Rectangle Track
+        {
+            get
+            {
+                return new Rectangle(8, Height / 2 - 1,
+                                     Math.Max(10, Width - 8 - (ShowValue ? 64 : 8)), 2);
+            }
+        }
 
         void SetFromX(int x)
         {
@@ -778,8 +787,9 @@ namespace RyGT
                 g.FillRectangle(done, track.X, track.Y, x - track.X, track.Height);
             float knob = Focused ? 14 : 12;
             using (var fill = new SolidBrush(Enabled ? Color.White : Dark.Disabled)) g.FillEllipse(fill, x - knob / 2, track.Y + 1 - knob / 2, knob, knob);
-            TextRenderer.DrawText(g, value + Suffix, Dark.Caps(9f), new Rectangle(track.Right + 8, 0, Width - track.Right - 8, Height),
-                                  Enabled ? Dark.Text : Dark.Disabled, TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            if (ShowValue)
+                TextRenderer.DrawText(g, value + Suffix, Dark.Caps(9f), new Rectangle(track.Right + 8, 0, Width - track.Right - 8, Height),
+                                      Enabled ? Dark.Text : Dark.Disabled, TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
         }
     }
 
@@ -1519,6 +1529,124 @@ namespace RyGT
         }
     }
 
+    static class AtomicConfig
+    {
+        internal static void Write(string path, string text)
+        {
+            path = Path.GetFullPath(path);
+            string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                using (var stream = new FileStream(temporary, FileMode.CreateNew,
+                                                 FileAccess.Write, FileShare.None))
+                {
+                    using (var writer = new StreamWriter(stream, new UTF8Encoding(false), 1024, true))
+                        writer.Write(text);
+                    stream.Flush(true);
+                }
+                if (File.Exists(path)) File.Replace(temporary, path, null);
+                else File.Move(temporary, path);
+            }
+            finally
+            {
+                try { File.Delete(temporary); } catch { }
+            }
+        }
+    }
+
+    sealed class NumberSlider : TableLayoutPanel
+    {
+        readonly Slider slider;
+        readonly NumericUpDown number;
+        readonly Func<int, int> normalize;
+        bool changing;
+        int value;
+        public event EventHandler ValueChanged;
+
+        public NumberSlider(int min, int max, int initial, int step, Func<int, int> normalize)
+        {
+            this.normalize = normalize;
+            ColumnCount = 2;
+            RowCount = 1;
+            BackColor = Color.Transparent;
+            Size = new Size(400, 28);
+            ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            slider = new Slider
+            {
+                Name = "Slider", Minimum = min, Maximum = max, ShowValue = false,
+                SmallChange = 1, LargeChange = step, Dock = DockStyle.Fill, Margin = new Padding(0)
+            };
+            number = new NumericUpDown
+            {
+                Name = "Number", Minimum = min, Maximum = max, Increment = step,
+                DecimalPlaces = 0, Width = 100, Anchor = AnchorStyles.Right,
+                Margin = new Padding(8, 0, 0, 0), TextAlign = HorizontalAlignment.Right
+            };
+            Controls.Add(slider, 0, 0);
+            Controls.Add(number, 1, 0);
+            Value = initial;
+            slider.ValueChanged += delegate { Value = slider.Value; };
+            number.ValueChanged += delegate { Value = (int)number.Value; };
+        }
+
+        public int Value
+        {
+            get { return value; }
+            set
+            {
+                if (changing) return;
+                int next = Math.Max(slider.Minimum, Math.Min(slider.Maximum, normalize(value)));
+                bool changed = next != this.value;
+                changing = true;
+                try
+                {
+                    this.value = next;
+                    slider.Value = next;
+                    number.Value = next;
+                }
+                finally { changing = false; }
+                if (changed && ValueChanged != null) ValueChanged(this, EventArgs.Empty);
+            }
+        }
+    }
+
+    static class DlssSettings
+    {
+        internal static double Normalize(string key, double value)
+        {
+            switch (key)
+            {
+                case "dlss_sharpening": return Math.Max(0.0, Math.Min(100.0, Math.Round(value)));
+                default: throw new ArgumentException("Unknown DLSS setting.", "key");
+            }
+        }
+
+        internal static double Number(object value, string key, double fallback)
+        {
+            try
+            {
+                if (value == null || value is bool) return fallback;
+                double number;
+                var text = value as string;
+                if (text != null)
+                {
+                    if (!double.TryParse(text, System.Globalization.NumberStyles.Float,
+                                         System.Globalization.CultureInfo.InvariantCulture,
+                                         out number)) return fallback;
+                }
+                else number = Convert.ToDouble(value,
+                                               System.Globalization.CultureInfo.InvariantCulture);
+                if (double.IsNaN(number) || double.IsInfinity(number)) return fallback;
+                return Normalize(key, number);
+            }
+            catch (FormatException) { return fallback; }
+            catch (InvalidCastException) { return fallback; }
+            catch (OverflowException) { return fallback; }
+        }
+    }
+
     class Settings
     {
         public string Game = "", Update = "", Modules = "", Fonts = "";
@@ -1795,6 +1923,22 @@ namespace RyGT
             upscaling.Controls.Add(qualityNote);
             var rcas = AddOption(upscaling, "Sharpening (FSR)", "GPU", "rcas_enabled", true);
 
+            // Temporal DLSS (GPU.temporal_dlss) reconstructs the game's own jittered scene at the
+            // window size, and DLSS sharpening (GPU.dlss_sharpening, 0 = off) sharpens what DLSS
+            // scaled, not the interface. The renderer reads the first once and the second again
+            // while the game runs.
+            var temporalDlss = AddOption(upscaling, "Temporal DLSS (sharper image)", "GPU", "temporal_dlss", false);
+            var dlssSharpening = AddNumberSlider(upscaling, "DLSS sharpening (%)", "dlss_sharpening",
+                                              0, 100, 0, 1, 5, key => GpuSetting(root, key), (key, value) =>
+            {
+                try { WriteSetting("GPU", key, value); }
+                catch (Exception e) { MessageBox.Show(this, "Could not save the setting: " + e.Message); }
+            });
+            var temporalNote = Hint("Needs NVIDIA DLSS above and HD UI under Rendering, a window bigger than 1920 x 1080, and no frame generation. " +
+                                    "It follows the game's own camera and motion, so it is sharper than the DLSS that only scales the finished picture. " +
+                                    "Sharpening 0 is off.");
+            upscaling.Controls.Add(temporalNote);
+
             // NVIDIA files: the Download button, the status of what is there, and Add from a folder.
             var dlssStatus = noteLabel();
             dlssStatus.Margin = new Padding(0, 2, 0, 2);
@@ -2016,6 +2160,8 @@ namespace RyGT
                                               : "1920 x 1080 -> " + w + " x " + h + ", then fitted to the window. Higher is sharper and costs more GPU.";
                 }
                 rcas.Visible = m == 1 || m == 2;
+                temporalDlss.Visible = temporalNote.Visible = m == 3;
+                (dlssSharpening.Parent ?? dlssSharpening).Visible = m == 3;
                 fgNote.Text = fg.SelectedIndex == 0 ? "Off: the game's own frame rate."
                             : fg.SelectedIndex == 1 ? (fsr3Installed ? "About 2x the frames on any GPU." : "Needs amd_fidelityfx_vk.dll next to GT7.exe.")
                             : dlssgOk ? "Generated frames between game frames. RTX 40 or newer."
@@ -2211,6 +2357,10 @@ namespace RyGT
                 try { WriteSetting("GPU", "texture_lod_bias", sharpnessValues[sharpness.SelectedIndex]); }
                 catch (Exception e) { MessageBox.Show(this, "Could not save the setting: " + e.Message); }
             };
+            // HD UI (GPU.hd_ui): the menus and HUD drawn at the window's size, with the game's 4K
+            // images and sharper map icons. The renderer reads the setting itself; off by default.
+            AddOption(graphics, "HD UI (the interface at the window's resolution)", "GPU", "hd_ui", false);
+            graphics.Controls.Add(Hint("Draws the menus and the HUD at the window's size instead of 1920 x 1080, with the game's 4K images and sharper map icons. It needs a window bigger than 1920 x 1080, uses more video memory, and is off with an ultrawide screen."));
             // Shader cache size (GPU.driver_cache_gb, GPU.driver_cache_unlimited; the game gets it as
             // RYGT_DRIVER_CACHE_MAX_MB): the renderer's saved GPU shader cache, like NVIDIA's own
             // setting. 0 turns it off; a bigger cache keeps more cars and tracks compiled, and is saved
@@ -2684,8 +2834,8 @@ namespace RyGT
             if (section == null) { section = new Dictionary<string, object>(); config[sectionName] = section; }
             section[key] = on;
             Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath));
-            File.WriteAllText(ConfigPath, new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(config),
-                              new UTF8Encoding(false));
+            AtomicConfig.Write(ConfigPath,
+                new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(config));
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -3118,6 +3268,23 @@ namespace RyGT
             row.Controls.Add(check);
             row.Controls.Add(rollBack);
             panel.Controls.Add(row);
+        }
+
+        // A slider with an exact-value number box on the same line, in a SettingRow. One
+        // normalized value feeds both inputs and one save.
+        static NumberSlider AddNumberSlider(TableLayoutPanel panel, string text, string key,
+                                            int min, int max, int fallback, double scale, int step,
+                                            Func<string, object> read, Action<string, object> save)
+        {
+            double stored = DlssSettings.Number(read(key), key, fallback / scale);
+            var control = new NumberSlider(min, max, (int)Math.Round(stored * scale), step,
+                value => (int)Math.Round(DlssSettings.Normalize(key, value / scale) * scale))
+            {
+                Name = key, AccessibleName = text
+            };
+            panel.Controls.Add(new SettingRow(text, control));
+            control.ValueChanged += delegate { save(key, control.Value / scale); };
+            return control;
         }
 
         CheckBox AddOption(TableLayoutPanel panel, string text, string sectionName, string key, bool fallback)
