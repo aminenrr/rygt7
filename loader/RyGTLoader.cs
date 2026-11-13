@@ -1794,13 +1794,6 @@ namespace RyGT
             upscaling.Controls.Add(comboRow("Quality", quality, qualityNote));
             upscaling.Controls.Add(qualityNote);
             var rcas = AddOption(upscaling, "Sharpening (FSR)", "GPU", "rcas_enabled", true);
-            // UI-HIRES (ported from RyGTS): the scene is scaled to the window first (DLSS when it is
-            // on, else a smooth scale) and the menus and HUD are drawn over it at the window's size
-            // instead of being scaled up with the 1080p picture. GPU.ui_hires; the game gets it as
-            // RYGT_UI_HIRES=1 (the renderer also reads the setting itself). Off by default.
-            AddOption(upscaling, "Draw the UI at screen resolution", "GPU", "ui_hires", false);
-            upscaling.Controls.Add(Hint("Sharper menus and HUD on screens bigger than 1080p: the UI is drawn at your window's size over the upscaled picture. " +
-                                        "Experimental; off with the ultrawide HUD layout. Turn it off if the UI looks wrong."));
 
             // NVIDIA files: the Download button, the status of what is there, and Add from a folder.
             var dlssStatus = noteLabel();
@@ -4013,10 +4006,6 @@ namespace RyGT
                             if (string.IsNullOrEmpty(start.EnvironmentVariables["RYGT_SHADER_OBJECT"]))
                                 start.EnvironmentVariables["RYGT_SHADER_OBJECT"] = "1";
                         }
-                        // UI-HIRES from the Graphics page: the UI drawn at the window's size. Only when
-                        // checked, so a launcher script's own value stays.
-                        if (GpuSetting(root, "ui_hires") is bool && (bool)GpuSetting(root, "ui_hires"))
-                            start.EnvironmentVariables["RYGT_UI_HIRES"] = "1";
                         // DLSS frame multiplier from the Graphics page (generated frames, 1-5).
                         start.EnvironmentVariables["RYGT_DLSSG_FRAMES"] = DlssgFrames(root).ToString();
                         // Upscaling quality from the Graphics page (the size DLSS and FSR 3.1 scale to).
