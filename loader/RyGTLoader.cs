@@ -2398,7 +2398,9 @@ namespace RyGT
             // PERF-GT7-108: the compile pack (RYGT_COMPILE_PACK). Recording the pack and compiling it at
             // start need shader objects, off by default since FIX-GT7-147, so the game also gets
             // RYGT_SHADER_OBJECT=1 with it (unless that is already set); without it the option did nothing.
-            AddOption(graphics, "Precompile shaders at start (compile pack; also turns on shader objects)", "GPU", "compile_pack", false);
+            var compilePack = AddOption(graphics, "Precompile shaders at start (compile pack; also turns on shader objects)", "GPU", "compile_pack", false);
+            // FEAT-GT7-162: the Advanced page greys out the switches this option sets.
+            compilePack.CheckedChanged += delegate { AdvancedPage.CompilePackChanged(compilePack.Checked); };
             graphics.Controls.Add(Hint("Keeps the shaders this PC has seen and compiles them in the background at start (for example after a driver update), so races stutter less. " +
                                        "It turns on shader objects, which were off by default because of known issues: small icons in the garage's car interiors can lose pieces (seen on an RTX 4070), " +
                                        "and crashes were reported on AMD GPUs. If you see either, turn this off."));
@@ -3306,6 +3308,14 @@ namespace RyGT
             return parsed as Dictionary<string, object> ?? new Dictionary<string, object>();
         }
 
+        /// FEAT-GT7-162: Graphics > "Precompile shaders at start" (GPU.compile_pack); the Advanced page
+        /// greys out the switches it sets.
+        internal static bool CompilePackOn(string root)
+        {
+            object on = GpuSetting(root, "compile_pack");
+            return on is bool && (bool)on;
+        }
+
         /// A GPU section setting from the game's settings file, or null.
         static object GpuSetting(string root, string key)
         {
@@ -4161,18 +4171,6 @@ namespace RyGT
                             start.EnvironmentVariables["RYGT_MANIFEST_RECORD"] = "1";
                             start.EnvironmentVariables["RYGT_MANIFEST_PRETRANSLATE"] = "1";
                         }
-                        // PERF-GT7-108 from the Graphics page: the pipelines this PC's driver cache lacks (after
-                        // a driver update) are compiled at start from the recipes kept in the compile pack.
-                        // Only when checked: Jouer-Compile-Pack.cmd sets it itself before starting this launcher.
-                        // The pack is recorded and compiled only with shader objects (FIX-GT7-136/147: off
-                        // by default), so the option turns them on too; a value already set (a launcher
-                        // script, the user's environment) is kept.
-                        if (GpuSetting(root, "compile_pack") is bool && (bool)GpuSetting(root, "compile_pack"))
-                        {
-                            start.EnvironmentVariables["RYGT_COMPILE_PACK"] = "1";
-                            if (string.IsNullOrEmpty(start.EnvironmentVariables["RYGT_SHADER_OBJECT"]))
-                                start.EnvironmentVariables["RYGT_SHADER_OBJECT"] = "1";
-                        }
                         // DLSS frame multiplier from the Graphics page (generated frames, 1-5).
                         start.EnvironmentVariables["RYGT_DLSSG_FRAMES"] = DlssgFrames(root).ToString();
                         // Upscaling quality from the Graphics page (the size DLSS and FSR 3.1 scale to).
@@ -4211,6 +4209,19 @@ namespace RyGT
                         // FEAT-GTS-254: the Advanced page's switches and other variables last, so they win.
                         int customCount = CustomEnvironment.Apply(start, new Settings(Path.Combine(root, "RyGT7.ini")).Env);
                         if (customCount > 0) AppendSetupLog(root, customCount + " custom environment variable(s) applied.");
+                        // PERF-GT7-108 from the Graphics page: the pipelines this PC's driver cache lacks (after
+                        // a driver update) are compiled at start from the recipes kept in the compile pack.
+                        // Only when checked: Jouer-Compile-Pack.cmd sets it itself before starting this launcher.
+                        // The pack is recorded and compiled only with shader objects (FIX-GT7-136/147: off
+                        // by default), so the option turns them on too.
+                        // FEAT-GT7-162: applied after the Advanced page's env= lines, so the checked option
+                        // wins over a RYGT_COMPILE_PACK or RYGT_SHADER_OBJECT row there (the page greys them out).
+                        if (CompilePackOn(root))
+                        {
+                            start.EnvironmentVariables["RYGT_COMPILE_PACK"] = "1";
+                            start.EnvironmentVariables["RYGT_SHADER_OBJECT"] = "1";
+                            AppendSetupLog(root, "FEAT-GT7-162: compile pack on: RYGT_COMPILE_PACK=1, RYGT_SHADER_OBJECT=1 (over the Advanced page).");
+                        }
                         started = Process.Start(start);
                     }
                     catch (Exception e)

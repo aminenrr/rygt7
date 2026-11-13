@@ -188,6 +188,24 @@ namespace RyGT
 
         static readonly Color BoxFill = Color.FromArgb(54, 54, 54), BoxEdge = Color.FromArgb(78, 78, 78);
 
+        /// FEAT-GT7-162: the switches Graphics > "Precompile shaders at start" sets itself, after the
+        /// env= lines (so it wins). While it is checked their rows are greyed out and cannot be changed.
+        static readonly string[] CompilePackManaged = { "RYGT_COMPILE_PACK", "RYGT_SHADER_OBJECT" };
+        static Action<bool> compilePackChanged;
+
+        /// Called by the Graphics page when its compile pack option changes.
+        public static void CompilePackChanged(bool on)
+        {
+            if (compilePackChanged != null) compilePackChanged(on);
+        }
+
+        public static bool IsCompilePackManaged(string name)
+        {
+            return Array.IndexOf(CompilePackManaged, name) >= 0;
+        }
+
+        const string CompilePackNote = "Set by Graphics > Precompile shaders at start (on); this row is ignored while that is on.";
+
         /// Builds the page into `page`. `env` is the saved list (RyGT.ini env= lines); `save` gets the
         /// new full list after every change.
         /// FEAT-GTS-467: what Refresh keeps of the page while it reads the renderer again.
@@ -349,6 +367,26 @@ namespace RyGT
                 Mark(row, current != null);
             }
             loading = false;
+            // FEAT-GT7-162: greyed out while the Graphics page's compile pack sets these switches itself.
+            bool packOn = LoaderForm.CompilePackOn(root);
+            Func<RendererSwitch, bool> locked = s => packOn && IsCompilePackManaged(s.Name);
+            Action<bool> lockRows = on =>
+            {
+                packOn = on;
+                foreach (var pair in rowSwitch)
+                {
+                    if (!IsCompilePackManaged(pair.Value.Name)) continue;
+                    var row = pair.Key;
+                    row.Cells[1].ReadOnly = on || pair.Value.IsFlag;
+                    string tip = Tip(pair.Value);
+                    if (on) tip = Wrap(CompilePackNote, 72) + "\n\n" + tip;
+                    foreach (DataGridViewCell cell in row.Cells) cell.ToolTipText = tip;
+                    row.Cells[0].Style.ForeColor = on ? Dark.DimText : row.Cells[1].Style.ForeColor;
+                }
+                grid.Invalidate();
+            };
+            lockRows(packOn);
+            compilePackChanged = on => { if (!grid.IsDisposed) lockRows(on); };
             card.Controls.Add(grid);
             page.Controls.Add(card);
             page.RowStyles.Clear();
@@ -458,6 +496,15 @@ namespace RyGT
                 RendererSwitch s;
                 if (!rowSwitch.TryGetValue(grid.Rows[e.RowIndex], out s)) return;
                 e.PaintBackground(e.ClipBounds, (e.State & DataGridViewElementStates.Selected) != 0);
+                if (locked(s))
+                {
+                    // FEAT-GT7-162: the Graphics page sets it; no box or toggle to click.
+                    TextRenderer.DrawText(e.Graphics, "1 (Graphics page)", grid.Font,
+                                          new Rectangle(e.CellBounds.X + 8, e.CellBounds.Y, e.CellBounds.Width - 12, e.CellBounds.Height), Dark.DimText,
+                                          TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
+                    e.Handled = true;
+                    return;
+                }
                 if (s.IsFlag)
                 {
                     PaintToggle(e.Graphics, e.CellBounds, s, Convert.ToString(e.Value) ?? "", grid.Font);
@@ -500,7 +547,7 @@ namespace RyGT
             Action<int> toggle = rowIndex =>
             {
                 RendererSwitch s;
-                if (rowIndex < 0 || !rowSwitch.TryGetValue(grid.Rows[rowIndex], out s) || !s.IsFlag) return;
+                if (rowIndex < 0 || !rowSwitch.TryGetValue(grid.Rows[rowIndex], out s) || !s.IsFlag || locked(s)) return;
                 var cell = grid.Rows[rowIndex].Cells[1];
                 bool defaultKnown;
                 bool defaultOn = DefaultOn(s, out defaultKnown);
@@ -519,7 +566,7 @@ namespace RyGT
             grid.CellMouseMove += (sender, e) =>
             {
                 RendererSwitch s;
-                bool hand = e.RowIndex >= 0 && e.ColumnIndex == 1 && rowSwitch.TryGetValue(grid.Rows[e.RowIndex], out s) && s.IsFlag;
+                bool hand = e.RowIndex >= 0 && e.ColumnIndex == 1 && rowSwitch.TryGetValue(grid.Rows[e.RowIndex], out s) && s.IsFlag && !locked(s);
                 grid.Cursor = hand ? Cursors.Hand : Cursors.Default;
             };
             grid.CellEnter += (sender, e) => { if (e.ColumnIndex == 1) grid.InvalidateCell(e.ColumnIndex, e.RowIndex); };
@@ -529,6 +576,7 @@ namespace RyGT
             {
                 var cell = grid.CurrentCell;
                 if (cell == null || cell.ColumnIndex != 1 || grid.IsCurrentCellInEditMode || !rowSwitch.ContainsKey(grid.Rows[cell.RowIndex])) return;
+                if (locked(rowSwitch[grid.Rows[cell.RowIndex]])) { e.Handled = true; return; }
                 if (e.KeyCode == Keys.Space && cell.ReadOnly) { toggle(cell.RowIndex); e.Handled = true; return; }
                 if (e.KeyCode != Keys.Delete && e.KeyCode != Keys.Back) return;
                 cell.Value = "";
