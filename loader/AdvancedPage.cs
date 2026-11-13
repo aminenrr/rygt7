@@ -199,9 +199,13 @@ namespace RyGT
             if (compilePackChanged != null) compilePackChanged(on);
         }
 
+        /// FEAT-GT7-163: RYGT_SHADER_OBJECT only on an NVIDIA GPU; elsewhere the row stays editable.
         public static bool IsCompilePackManaged(string name)
         {
-            return Array.IndexOf(CompilePackManaged, name) >= 0;
+            if (Array.IndexOf(CompilePackManaged, name) < 0) return false;
+            if (name != "RYGT_SHADER_OBJECT") return true;
+            var gpu = GpuAdapter.Primary();
+            return gpu != null && gpu.IsNvidia;
         }
 
         const string CompilePackNote = "Set by Graphics > Precompile shaders at start (on); this row is ignored while that is on.";

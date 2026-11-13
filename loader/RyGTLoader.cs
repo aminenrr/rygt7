@@ -76,6 +76,102 @@ namespace RyGT
             out IntPtr device, out int featureLevel, out IntPtr immediateContext);
     }
 
+    /// FEAT-GT7-163: which GPU the game will render on, read through DXGI (no new dependency): the
+    /// hardware adapter with the most dedicated video memory, so on a laptop with a switchable GPU
+    /// (Intel or AMD integrated + NVIDIA) it is the discrete one, as the renderer's Vulkan device is.
+    /// Read once per launcher run; null when DXGI cannot be asked (then nothing GPU-specific is set).
+    static class GpuAdapter
+    {
+        public const uint VendorNvidia = 0x10DE, VendorAmd = 0x1002, VendorIntel = 0x8086;
+
+        public sealed class Info
+        {
+            public uint VendorId;
+            public string Description = "";
+            public ulong DedicatedMemory;
+            public bool IsNvidia { get { return VendorId == VendorNvidia; } }
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct AdapterDesc1
+        {
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string Description;
+            public uint VendorId, DeviceId, SubSysId, Revision;
+            public UIntPtr DedicatedVideoMemory, DedicatedSystemMemory, SharedSystemMemory;
+            public uint LuidLow;
+            public int LuidHigh;
+            public uint Flags;
+        }
+
+        [DllImport("dxgi.dll", CallingConvention = CallingConvention.StdCall)]
+        static extern int CreateDXGIFactory1(ref Guid riid, out IntPtr factory);
+
+        // IDXGIFactory1::EnumAdapters1 is vtable slot 12 (IUnknown 0-2, IDXGIObject 3-6, IDXGIFactory 7-11);
+        // IDXGIAdapter1::GetDesc1 is slot 10 (IUnknown 0-2, IDXGIObject 3-6, IDXGIAdapter 7-9).
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        delegate int EnumAdapters1Fn(IntPtr self, uint index, out IntPtr adapter);
+        [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+        delegate int GetDesc1Fn(IntPtr self, out AdapterDesc1 desc);
+
+        const int DxgiErrorNotFound = unchecked((int)0x887A0002);
+        const uint DxgiAdapterFlagSoftware = 2;
+
+        static readonly object gate = new object();
+        static bool probed;
+        static Info primary;
+
+        static T Method<T>(IntPtr comObject, int slot) where T : class
+        {
+            IntPtr vtable = Marshal.ReadIntPtr(comObject);
+            IntPtr function = Marshal.ReadIntPtr(vtable, slot * IntPtr.Size);
+            return Marshal.GetDelegateForFunctionPointer(function, typeof(T)) as T;
+        }
+
+        /// The adapter the game renders on, or null if DXGI is missing or lists no hardware adapter.
+        public static Info Primary()
+        {
+            lock (gate)
+            {
+                if (probed) return primary;
+                probed = true;
+                IntPtr factory = IntPtr.Zero;
+                try
+                {
+                    var iid = new Guid("770aae78-f26f-4dba-a829-253c83d1b387"); // IDXGIFactory1
+                    if (CreateDXGIFactory1(ref iid, out factory) < 0 || factory == IntPtr.Zero) return null;
+                    var enumAdapters = Method<EnumAdapters1Fn>(factory, 12);
+                    for (uint index = 0; index < 16; ++index)
+                    {
+                        IntPtr adapter;
+                        int result = enumAdapters(factory, index, out adapter);
+                        if (result == DxgiErrorNotFound) break;
+                        if (result < 0 || adapter == IntPtr.Zero) continue;
+                        try
+                        {
+                            AdapterDesc1 desc;
+                            if (Method<GetDesc1Fn>(adapter, 10)(adapter, out desc) < 0) continue;
+                            if ((desc.Flags & DxgiAdapterFlagSoftware) != 0) continue; // Microsoft Basic Render Driver
+                            ulong memory = desc.DedicatedVideoMemory.ToUInt64();
+                            // The first adapter (the one with the main display) unless another has more video memory.
+                            if (primary == null || memory > primary.DedicatedMemory)
+                                primary = new Info { VendorId = desc.VendorId, Description = (desc.Description ?? "").Trim(), DedicatedMemory = memory };
+                        }
+                        finally { Marshal.Release(adapter); }
+                    }
+                }
+                catch { primary = null; }
+                finally { if (factory != IntPtr.Zero) Marshal.Release(factory); }
+                return primary;
+            }
+        }
+
+        /// "NVIDIA GeForce RTX 3070 Ti Laptop GPU (vendor 0x10DE)" for the setup log.
+        public static string Describe(Info info)
+        {
+            return info == null ? "unknown (DXGI not available)" : info.Description + " (vendor 0x" + info.VendorId.ToString("X4") + ")";
+        }
+    }
+
     /// Wine (Linux, Steam Proton): its kernel32 has wine_get_unix_file_name. Wine before 11 cannot
     /// make Windows links (CreateSymbolicLink does nothing there and mklink /J fails), so under Wine
     /// the game's files and folders are linked with Unix symbolic links, which Wine follows like the
@@ -2397,13 +2493,14 @@ namespace RyGT
             AddOption(graphics, "Rebuild translated shaders in the background after a renderer update (about 30 MB a track)", "GPU", "shader_pretranslate", false);
             // PERF-GT7-108: the compile pack (RYGT_COMPILE_PACK). Recording the pack and compiling it at
             // start need shader objects, off by default since FIX-GT7-147, so the game also gets
-            // RYGT_SHADER_OBJECT=1 with it (unless that is already set); without it the option did nothing.
-            var compilePack = AddOption(graphics, "Precompile shaders at start (compile pack; also turns on shader objects)", "GPU", "compile_pack", false);
+            // RYGT_SHADER_OBJECT=1 with it on NVIDIA GPUs (FEAT-GT7-163); without it the option does nothing.
+            var compilePack = AddOption(graphics, "Precompile shaders at start (compile pack; turns on shader objects on NVIDIA GPUs)", "GPU", "compile_pack", false);
             // FEAT-GT7-162: the Advanced page greys out the switches this option sets.
             compilePack.CheckedChanged += delegate { AdvancedPage.CompilePackChanged(compilePack.Checked); };
+            // FEAT-GT7-163: shader objects (and so the pack) only on NVIDIA GPUs; AMD crash reports (rygt7#35).
             graphics.Controls.Add(Hint("Keeps the shaders this PC has seen and compiles them in the background at start (for example after a driver update), so races stutter less. " +
-                                       "It turns on shader objects, which were off by default because of known issues: small icons in the garage's car interiors can lose pieces (seen on an RTX 4070), " +
-                                       "and crashes were reported on AMD GPUs. If you see either, turn this off."));
+                                       "NVIDIA GPUs only: it turns on shader objects, which are off by default because of known issues (small icons in the garage's car interiors can lose pieces, seen on an RTX 4070). " +
+                                       "On AMD and other GPUs shader objects stay off because they crashed there, so this option does nothing. If you see problems, turn this off."));
             fpsLock.SelectedIndexChanged += delegate
             {
                 try { WriteSetting("GPU", "race_fps_lock", fpsLock.SelectedIndex == 1 ? 60 : 30); }
@@ -4216,11 +4313,17 @@ namespace RyGT
                         // by default), so the option turns them on too.
                         // FEAT-GT7-162: applied after the Advanced page's env= lines, so the checked option
                         // wins over a RYGT_COMPILE_PACK or RYGT_SHADER_OBJECT row there (the page greys them out).
+                        // FEAT-GT7-163: shader objects only on NVIDIA (vendor 0x10DE): AMD users reported
+                        // crashes with them (RyGT-Team/rygt7#35). On other GPUs (or when DXGI cannot tell)
+                        // RYGT_SHADER_OBJECT is left as it is (unset unless the Advanced page sets it), and
+                        // the pack then records and compiles nothing.
                         if (CompilePackOn(root))
                         {
+                            var gpu = GpuAdapter.Primary();
                             start.EnvironmentVariables["RYGT_COMPILE_PACK"] = "1";
-                            start.EnvironmentVariables["RYGT_SHADER_OBJECT"] = "1";
-                            AppendSetupLog(root, "FEAT-GT7-162: compile pack on: RYGT_COMPILE_PACK=1, RYGT_SHADER_OBJECT=1 (over the Advanced page).");
+                            if (gpu != null && gpu.IsNvidia) start.EnvironmentVariables["RYGT_SHADER_OBJECT"] = "1";
+                            AppendSetupLog(root, "FEAT-GT7-162/163: compile pack on (over the Advanced page); GPU " + GpuAdapter.Describe(gpu) + ": " +
+                                                 (gpu != null && gpu.IsNvidia ? "RYGT_SHADER_OBJECT=1." : "shader objects not turned on (NVIDIA only)."));
                         }
                         started = Process.Start(start);
                     }
