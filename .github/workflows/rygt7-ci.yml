@@ -1,10 +1,10 @@
 name: RyGT7 CI package
 run-name: RyGT7 CI build (${{ github.ref_name }})
-# Fork branch pr-tests: builds this fork's source with the renderer from
-# aminenrr/shadgt7 branch pr-tests (FORK_* below; the official repositories otherwise).
+# Fork branch trophies: builds this fork's source with the renderer from
+# aminenrr/shadgt7 branch trophies (FORK_* below; the official repositories otherwise).
 on:
   push:
-    branches: [pr-tests]
+    branches: [trophies]
   workflow_call:
     inputs:
       renderer_sha:
@@ -41,7 +41,7 @@ permissions:
 env:
   FORK_SOURCE_REPO: aminenrr/rygt7
   FORK_RENDERER_REPO: aminenrr/shadgt7
-  FORK_RENDERER_BRANCH: pr-tests
+  FORK_RENDERER_BRANCH: trophies
 concurrency:
   group: rygt7-main-package-${{ github.ref }}
   cancel-in-progress: false

@@ -1,19 +1,35 @@
-# AGENTS.fork.md — branch `pr-tests` (aminenrr's RyGT7 fork)
+# AGENTS.fork.md — branch `trophies` (aminenrr's RyGT7 fork)
 
 Context for any agent (human or AI) working on this branch. Written 2026-11-14.
 
 ## What this branch is
-- **Test-only.** `pr-tests` exists only to test the main RyGT7 project with specific upstream pull
-  requests stacked on top of it, and to get a Windows CI build of that combination.
-- It is **never** merged anywhere, never opened as a PR, never pushed upstream. Nothing here is
-  meant to ship; it can be thrown away and rebuilt at any time.
-- Do not touch the fork's other branches (`main`, `round2*`, `ui-hires-precompile`) from work on
-  this branch. Their own notes live in their own `AGENTS.fork.md`.
-- See `AGENTS.md` (upstream) for the project itself. Owner's PC: i7-12700H, RTX 3070 Ti laptop (8 GB).
+- Feature branch for the **trophy system**, stacked on `pr-tests` (rygt7 1168071, shadgt7 7c8e9ced),
+  so its CI build also carries HD UI, temporal DLSS under HD UI, DualSense HD haptics and FIX-GT7-184.
+- Renderer: `aminenrr/shadgt7` branch `trophies`. CI (`rygt7-ci.yml`) runs on pushes to `trophies` and
+  builds with that renderer branch head (`build-support/renderer.json` pins the same).
+- Trophy work is kept in its own commits so it can be rebased onto upstream `main` for a PR later.
+  Never push, comment or open PRs upstream; the owner posts upstream.
+- Next: `precompile-port` (GT Sport shadGT #40/#42/#44 + RyGTS#46 port) stacked on this branch, only
+  after the owner confirms trophies work. Not started.
+- Retired 2026-11-14: `round2*`, `ui-hires-precompile` (superseded by pr-tests: HD UI replaced UI-HIRES,
+  black cars fixed upstream, temporal DLSS upstream). The compile pack / shader-object quick win and
+  the -neo / track-first precompile drafts are dropped; the precompile port replaces them.
 
-## How it is built
+## Trophy plan (feature table)
+| Step | ID | What | Status |
+|---|---|---|---|
+| 1 | FIX-GT7-175 | npbind.dat, trophy/*.trp, icon0.png, param.sfo resolved through the app0 layers (update=, game= folders); cause of "No npCommId found". On by default, RYGT_SCE_SYS_LAYERS=0 restores app0 only | planned |
+| 2 | FEAT-GT7 (new) | Trophy key (launcher, DPAPI) -> temp file in RYGT_TROPHY_KEY_FILE; TRP extract to user\trophy\<commId>; TROPCONF check; per-user list seeded; user id 0x10000000+slot -> 1000+slot | planned |
+| 3 | FEAT-GT7 (new) | Unlocks persist across restarts; Platinum unlocks itself | planned |
+| 4 | FEAT-GT7 (new) | In-game toast in Trophy-Notifier style (github.com/aminenrr/Trophy-Notifier src/toast.c), assets imported from the user's Trophy-Notifier install, RYGT_TROPHY_TOAST=0 hides | planned |
+| 5 | FEAT-GT7 (new) | Launcher Trophies section: key field, Test, earned / not earned list with icons, asset import, toast toggle; launcher 0.1.7 | planned |
+Nothing trophy-related happens without a key, except step 1.
+
+## pr-tests base (as inherited)
+
+### How pr-tests is built
 - Base: **upstream** `RyGT-Team/rygt7` `main` (not the fork's `main`, which lags behind).
-- Renderer: `aminenrr/shadgt7` branch `pr-tests` = upstream `RyGT-Team/shadgt7` `main` + the
+- Renderer: `aminenrr/shadgt7` branch `trophies` = upstream `RyGT-Team/shadgt7` `main` + the
   renderer PRs below. Same rules there: test-only, other branches untouched.
 - CI: `.github/workflows/rygt7-ci.yml` runs on every push to `pr-tests` (or by hand, Run workflow).
   It builds this fork's source with the head of `aminenrr/shadgt7` `pr-tests`
