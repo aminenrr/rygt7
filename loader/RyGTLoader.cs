@@ -666,7 +666,7 @@ namespace RyGT
             ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            label = new Label { Text = text, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0), BackColor = Color.Transparent, Tag = "heading" };
+            label = new Label { Text = text, UseMnemonic = false, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0), BackColor = Color.Transparent, Tag = "heading" };
             Controls.Add(label, 0, 0);
             control.Anchor = AnchorStyles.Right;
             control.Margin = new Padding(12, 0, 0, 0);

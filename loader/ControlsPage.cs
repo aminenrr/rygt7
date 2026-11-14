@@ -963,6 +963,7 @@ namespace RyGT
     /// The Controls page.
     class ControlsPage : Control
     {
+        readonly string root;
         readonly Bindings bindings;
         readonly Wheel wheel;
         readonly Func<string, string, int, int> readInt;
@@ -1009,6 +1010,7 @@ namespace RyGT
 
         public ControlsPage(string root, Func<string, string, int, int> readInt, Action<string, string, object> write, Action openPorts)
         {
+            this.root = root;
             this.readInt = readInt;
             this.write = write;
             this.openPorts = openPorts;
@@ -1084,11 +1086,11 @@ namespace RyGT
             padExtras.Controls.Add(new SettingRow("L2 deadzone", DeadzoneSlider(() => bindings.L2Deadzone, v => bindings.L2Deadzone = v)));
             padExtras.Controls.Add(r2Meter = new TriggerMeter("R2"));
             padExtras.Controls.Add(new SettingRow("R2 deadzone", DeadzoneSlider(() => bindings.R2Deadzone, v => bindings.R2Deadzone = v)));
-            var strength = new Slider { Minimum = 0, Maximum = 200, SmallChange = 5, LargeChange = 25, Size = new Size(150, 28), Suffix = "%", AccessibleName = "Trigger feedback strength" };
-            strength.Value = Math.Max(0, Math.Min(200, readInt("Input", "trigger_strength", 100)));
-            strength.ValueChanged += delegate { Try(() => write("Input", "trigger_strength", strength.Value)); };
-            padExtras.Controls.Add(new SettingRow("Feedback", strength));
-            padExtras.Controls.Add(Note("Adaptive trigger feedback: 0% off, 100% standard, 200% boosted. Updates while playing."));
+            // FEAT-GTS-265: the trigger feedback strength moved into the HD rumble & adaptive triggers
+            // window, with a slider and a Test button per effect.
+            padExtras.Controls.Add(new Heading("Feel"));
+            padExtras.Controls.Add(ActionRow("HD rumble & triggers", "Open", OpenFeel));
+            padExtras.Controls.Add(Note("Engine, road, wheel slip, ABS and pedal feel, each 0-200% with a Test button. Updates while playing."));
             padExtras.Controls.Add(new Heading("Players"));
             padExtras.Controls.Add(ActionRow("Controller ports", "Open", openPorts));
             padExtras.Controls.Add(ActionRow("Every button", "Reset all", ResetAll));
@@ -1157,6 +1159,15 @@ namespace RyGT
         static Label Note(string text)
         {
             return new Label { Text = text, AutoSize = true, MaximumSize = new Size(260, 0), ForeColor = Dark.DimText, Tag = "heading", Margin = new Padding(0, 6, 0, 4) };
+        }
+
+        void OpenFeel()
+        {
+            using (var form = new FeelForm(root, (key, fallback) => readInt("Input", key, fallback),
+                                           (key, value) => write("Input", key, value)))
+            {
+                form.ShowDialog(FindForm());
+            }
         }
 
         static SettingRow ActionRow(string text, string button, Action action)

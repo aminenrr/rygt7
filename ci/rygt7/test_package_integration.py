@@ -53,6 +53,7 @@ class PackageIntegration(unittest.TestCase):
             pinned=mock.patch.object(assembler,'FIDELITYFX',dict(assembler.FIDELITYFX,dll_sha256=fixture_sha,license_sha256=fixture_sha))
             pinned.start();self.addCleanup(pinned.stop)
             for n in assembler.RENDERER_LIBS:(root/'renderer'/n).write_bytes(b'renderer fixture')
+            (root/'renderer'/assembler.FEEL_TEST).write_bytes(b'feel test fixture')  # FEAT-GTS-265
             for n in assembler.STUB_LIBS:(root/'stubs'/n).write_bytes(b'stub fixture')
             for n in assembler.GCC_DLLS:(root/'ucrt/bin'/n).write_bytes(b'ucrt fixture')
             for n in ('launcher.exe','converter.exe','probe.exe'):(root/n).write_bytes(b'fixture')
@@ -70,6 +71,7 @@ class PackageIntegration(unittest.TestCase):
             with zipfile.ZipFile(archive) as z:
                 self.assertIn(args.name+'/licenses/RyGT7/3rdparty/fixture/LICENSES/nested/NOTICE.txt',z.namelist())
                 self.assertIn(args.name+'/licenses/shadGT7/externals/fixture/LICENSES/nested/NOTICE.txt',z.namelist())
+                self.assertIn(args.name+'/tools/ryty-feel-test.exe',z.namelist())  # FEAT-GTS-265
 
 def restore_env(original):
     for name,val in original.items():

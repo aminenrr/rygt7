@@ -109,7 +109,7 @@ try {
     if (!(Select-String -LiteralPath (Join-Path $rendererBuild 'CMakeCache.txt') -Pattern '^ENABLE_DISCORD_RPC:BOOL=ON$' -Quiet)) { throw 'Renderer Discord RPC configuration was not enabled' }
     # Exercise the actual protobuf resource rule before the large renderer build.
     Invoke-Checked $nativeNinja @('-C',$rendererBuild,'externals/protobuf/CMakeFiles/libprotobuf.dir/version.rc.res')
-    Invoke-Checked $nativeCmake @('--build',$rendererBuild,'--target','ryty_gpu','ryty_audio3d','ryty_ajm','ryty_ngs2','ryty_zlib','ryty_discmap','ryty_screenshot','ryty_np','--parallel','4')
+    Invoke-Checked $nativeCmake @('--build',$rendererBuild,'--target','ryty_gpu','ryty_audio3d','ryty_ajm','ryty_ngs2','ryty_zlib','ryty_discmap','ryty_screenshot','ryty_np','ryty_feel_test','--parallel','4')
     # FEAT-GTS-253: no runtime archive; AMD's FidelityFX runtime is the only file not built here.
     $fidelityfx = & $nativePython $toolchainScript fidelityfx $ToolsRoot | Select-Object -Last 1
     if ($LASTEXITCODE -ne 0 -or !$fidelityfx) { throw 'Pinned AMD FidelityFX runtime unavailable' }

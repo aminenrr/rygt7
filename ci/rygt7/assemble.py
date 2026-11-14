@@ -20,6 +20,9 @@ RENDERER_LIBS = ('libSceVideoOut.prx', 'libSceAudio3d.prx', 'libSceAjm.prx',
                  'libSceNgs2.prx', 'libSceZlib.prx', 'libSceDiscMap.prx',
                  'libSceScreenShot.prx', 'libSceNpAuth.prx')
 STUB_LIBS = ('libSceTextToSpeech.prx', 'libSceMbus.prx')
+# FEAT-GTS-265: the renderer build's ryty-feel-test.exe, packaged in tools\ for the launcher's
+# HD rumble & adaptive triggers Test buttons.
+FEEL_TEST = 'ryty-feel-test.exe'
 REQUIRED_RUNTIME = ('libc.prx', 'libkernel.prx', 'libSceFiber.prx', 'libScePad.prx',
                     'libSceHttp.prx', 'libSceNet.prx', 'libSceNetCtl.prx', 'libSceNpManager.prx',
                     'libSceNpSessionSignaling.prx', 'libSceRtc.prx', 'libSceSsl.prx')
@@ -102,7 +105,8 @@ def assemble(args):
         info['toolchain'] = json.loads(args.toolchain_info.read_text(encoding='utf-8-sig'))
     info['components'] = {name: {'sha256': sha(path), 'origin': origin} for name, path, origin in (
         ('launcher', args.launcher, 'rygt7-source-build'), ('converter', args.converter, 'rygt7-source-build'),
-        ('wheel_probe', args.wheel_probe, 'rygt7-source-build'))}
+        ('wheel_probe', args.wheel_probe, 'rygt7-source-build'),
+        ('feel_test', one_file(args.renderer_build, FEEL_TEST), 'shadgt7-source-build'))}
     args.info.write_text(json.dumps(info, indent=2) + '\n', encoding='utf-8')
 
 def package(args):
@@ -113,6 +117,7 @@ def package(args):
                 '--converter', str(args.converter), '--renderer-source', str(args.renderer_source),
                 '--renderer-deps-source', str(getattr(args, 'renderer_deps_source', args.renderer_source / 'externals')),
                 '--wheel-probe', str(args.wheel_probe), '--gcc-licenses', str(args.ucrt / 'share/licenses'),
+                '--feel-test', str(one_file(args.renderer_build, FEEL_TEST)),
                 '--deps-source', str(getattr(args, 'deps_source', args.source / '3rdparty')),
                 '--out', str(args.out), '--name', args.name]
     module.main()

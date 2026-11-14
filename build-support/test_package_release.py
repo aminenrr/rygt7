@@ -43,7 +43,7 @@ class ReleasePatchTests(unittest.TestCase):
             executable.write_bytes(b"executable fixture")
             args = ["package_release.py", "--runtime", str(runtime), "--launcher", str(executable),
                     "--converter", str(executable), "--deps-source", str(deps),
-                    "--gcc-licenses", str(gcc), "--out", str(root / "out"),
+                    "--gcc-licenses", str(gcc), "--feel-test", str(executable), "--out", str(root / "out"),
                     "--name", "release-test", "--zip"]
             with patch.object(sys, "argv", args):
                 release.main()
@@ -63,6 +63,8 @@ class ReleasePatchTests(unittest.TestCase):
                 # Steering wheels: the launcher's wheel page runs this probe.
                 self.assertIn("tools/ryty-wheel-probe.exe", records)
                 self.assertIn("release-test/tools/ryty-wheel-probe.exe", names)
+                # FEAT-GTS-265: the HD rumble & adaptive triggers window's Test buttons run this.
+                self.assertIn("release-test/tools/ryty-feel-test.exe", names)
                 for name in ("CUSA24769.xml", "README.md", "Proper-Offline-Patch-README.txt"):
                     data = archive.read("release-test/patches/" + name)
                     record = records["patches/" + name]

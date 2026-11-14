@@ -24,6 +24,7 @@ class AssemblyTests(unittest.TestCase):
                     license_sha256=module.sha(self.root/'fidelityfx/amd_fidelityfx_vk-LICENSE.txt'))
         pinned = patch.object(module, 'FIDELITYFX', pins); pinned.start(); self.addCleanup(pinned.stop)
         for n in module.RENDERER_LIBS: (self.root/'renderer'/n).write_bytes(b'renderer')
+        (self.root/'renderer'/module.FEEL_TEST).write_bytes(b'feel test')  # FEAT-GTS-265
         for n in module.STUB_LIBS: (self.root/'stubs'/n).write_bytes(b'stub')
         for n in module.GCC_DLLS: (self.root/'ucrt/bin'/n).write_bytes(b'ucrt')
         for n in module.REQUIRED_RUNTIME: (self.root/'built'/n).write_bytes(b'fresh runtime')
@@ -44,6 +45,7 @@ class AssemblyTests(unittest.TestCase):
         self.assertEqual(info['runtime_files']['libs/libstdc++-6.dll']['origin'],'ucrt64-toolchain')
         self.assertEqual(info['runtime_files']['amd_fidelityfx_vk.dll']['origin'],'amd-fidelityfx-sdk')
         self.assertNotIn('base_url', info)
+        self.assertEqual(info['components']['feel_test']['origin'], 'shadgt7-source-build')  # FEAT-GTS-265
         self.assertEqual({record['origin'] for record in info['runtime_files'].values()},
                          {'rygt7-source-build','shadgt7-source-build','rygt7-gt7-stub-build','ucrt64-toolchain','amd-fidelityfx-sdk'})
         self.assertEqual((self.args.runtime/'libs/old.prx').read_bytes(),b'fresh')

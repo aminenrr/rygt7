@@ -173,6 +173,10 @@ def main():
                         help="ryty-wheel-probe.exe built from core/libs/prx/libScePad/tools/WheelProbe.cpp "
                              "(the launcher's steering wheel setup reads wheels through it); default this "
                              "repository's build, else the prebuilt tools/ryty-wheel-probe.exe")
+    parser.add_argument("--feel-test", type=Path,
+                        help="ryty-feel-test.exe from the renderer build (shadgt7 FEAT-GT7-179): the launcher's "
+                             "HD rumble & adaptive triggers Test buttons run it; without it the window's "
+                             "settings still work but Test cannot play")
     parser.add_argument("--name")
     parser.add_argument("--zip", action="store_true")
     args = parser.parse_args()
@@ -200,6 +204,12 @@ def main():
         raise SystemExit("ryty-wheel-probe.exe not found (build the ryty-wheel-probe target): %s"
                          % args.wheel_probe)
     package.put(wheel_probe, "tools\\ryty-wheel-probe.exe")
+    # FEAT-GTS-265: the HD rumble & adaptive triggers window's Test buttons.
+    if args.feel_test is not None:
+        if not args.feel_test.is_file():
+            raise SystemExit("ryty-feel-test.exe not found (build the renderer's ryty_feel_test target): %s"
+                             % args.feel_test)
+        package.put(args.feel_test, "tools\\ryty-feel-test.exe")
     for n in ("CUSA24769.xml", "README.md", "Proper-Offline-Patch-README.txt"):
         package.put(REPO / "patches" / n, "patches\\" + n)
     package.put(REPO / "loader" / "launcher" / "background.png", "launcher\\background.png")
