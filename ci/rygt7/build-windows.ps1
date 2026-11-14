@@ -94,10 +94,14 @@ try {
     $env:LIB = "$($builtins.DirectoryName);$oldLib"
     Invoke-CmdFile (Join-Path $source 'runtime\gt7\build.cmd') $stubDir
     $pin = Get-Content (Join-Path $source 'build-support\renderer.json') -Raw | ConvertFrom-Json
-    # CI follows official main, resolved once by the controller; do not build a floating ref.
-    if ($pin.repository -cne 'https://github.com/RyGT-Team/shadgt7.git' -or
-        $pin.branch -cne 'main') { throw 'Unexpected renderer pin; update and re-audit adapter explicitly' }
-    $mirror = 'https://github.com/RyGT-Team/shadgt7.git'
+    # CI follows the pinned renderer branch (official main unless a fork's workflow names its own
+    # with RYGT7_RENDERER_REPO / RYGT7_RENDERER_BRANCH), resolved once by the controller; do not
+    # build a floating ref.
+    $expectedRepo = if ($env:RYGT7_RENDERER_REPO) { "https://github.com/$($env:RYGT7_RENDERER_REPO).git" } else { 'https://github.com/RyGT-Team/shadgt7.git' }
+    $expectedBranch = if ($env:RYGT7_RENDERER_BRANCH) { $env:RYGT7_RENDERER_BRANCH } else { 'main' }
+    if ($pin.repository -cne $expectedRepo -or
+        $pin.branch -cne $expectedBranch) { throw 'Unexpected renderer pin; update and re-audit adapter explicitly' }
+    $mirror = $expectedRepo
     $renderer = Join-Path $workspace 'renderer-source'
     Invoke-Checked git @('clone','--no-checkout',$mirror,$renderer)
     Invoke-Checked git @('-C',$renderer,'fetch','--no-tags','origin',$RendererSha)

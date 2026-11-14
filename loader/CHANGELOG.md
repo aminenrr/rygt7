@@ -6,7 +6,7 @@ The version lives in `loader/Version.cs`. To release a change, bump
 `LauncherVersion.Value` there and add a section here with the same number;
 CI fails when the two disagree.
 
-## 0.1.6 - 2026-11-14 (pr-tests)
+## 0.1.6 - 2026-11-14
 
 * FEAT-GTS-265: Controls > Controller has an HD rumble & triggers window (it replaces the Feedback slider,
   which moved into it). A slider per effect, 0-200% with 0 turning it off: HD rumble overall, engine, road

@@ -13,11 +13,17 @@ import urllib.request
 import urllib.error
 import zipfile
 
-API = 'https://api.github.com/repos/RyGT-Team/rygt7'
-RENDERER_API = 'https://api.github.com/repos/RyGT-Team/shadgt7'
+# Fork builds name their own repositories (RYGT7_SOURCE_REPO, RYGT7_RENDERER_REPO as owner/name);
+# unset, the official ones.
+SOURCE_REPO = os.environ.get('RYGT7_SOURCE_REPO') or 'RyGT-Team/rygt7'
+RENDERER_REPO = os.environ.get('RYGT7_RENDERER_REPO') or 'RyGT-Team/shadgt7'
+if not all(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', r) for r in (SOURCE_REPO, RENDERER_REPO)):
+    raise ValueError('Invalid repository name')
+API = 'https://api.github.com/repos/' + SOURCE_REPO
+RENDERER_API = 'https://api.github.com/repos/' + RENDERER_REPO
 RENDERER = os.environ.get('RENDERER_SHA', '')
-CONFIGURED = 'https://github.com/RyGT-Team/shadgt7.git'
-FETCHED = 'https://github.com/RyGT-Team/shadgt7.git'
+CONFIGURED = 'https://github.com/' + RENDERER_REPO + '.git'
+FETCHED = 'https://github.com/' + RENDERER_REPO + '.git'
 SHA = re.compile(r'^[0-9a-f]{40}$')
 DIGEST = re.compile(r'^[0-9a-f]{64}$')
 REQUIRED = {'RyGT7.exe', 'converter/ryty.exe', 'libs/libSceVideoOut.prx', 'libs/libSceFiber.prx', 'BUILD_INFO.json'}
@@ -39,8 +45,8 @@ def resolve():
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as out:
             out.write('### Resolved build sources\n\n'
-                      f'- Source: [`{commit}`](https://github.com/RyGT-Team/rygt7/commit/{commit})\n'
-                      f'- Renderer: [`{RENDERER}`](https://github.com/RyGT-Team/shadgt7/commit/{RENDERER})\n'
+                      f'- Source: [`{commit}`](https://github.com/{SOURCE_REPO}/commit/{commit})\n'
+                      f'- Renderer: [`{RENDERER}`](https://github.com/{RENDERER_REPO}/commit/{RENDERER})\n'
                       f'- Build needed: `{str(needed).lower()}`\n\n')
     print(f'Resolved GT7 main {commit}; shadgt7 main {RENDERER}')
 
