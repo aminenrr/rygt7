@@ -6,6 +6,18 @@ The version lives in `loader/Version.cs`. To release a change, bump
 `LauncherVersion.Value` there and add a section here with the same number;
 CI fails when the two disagree.
 
+## 0.1.7 - 2026-11-14
+
+* FEAT-GT7-187: a Trophies page. Enter your own 32-character trophy key once (Show / Hide); it is kept
+  encrypted for your Windows account (DPAPI, user\trophy.key.dpapi) and never written in plain text or
+  logged. Test checks it against the game's sce_sys\trophy\trophy00.trp (ryGT7's app0, then the update and
+  game folders). The page lists every trophy with its icon, name, description and grade, hidden ones until
+  earned, whether it is earned and when (from user\home\1000\trophy\<npCommId>.xml), with "N of M earned"
+  and Refresh. At Play the key reaches the game through a temporary file only your account can read
+  (RYGT_TROPHY_KEY_FILE), deleted when GT7 exits. "Show trophy pop-ups" (on by default) and "Import from
+  Trophy-Notifier" (its font, cups and PS5 sounds into user\trophy_assets) set up the in-game pop-ups.
+* Renderer: trophy fixes and pop-ups (FIX-GT7-175, FEAT-GT7-185/186)
+
 ## 0.1.6 - 2026-11-14
 
 * FEAT-GTS-265: Controls > Controller has an HD rumble & triggers window (it replaces the Feedback slider,
