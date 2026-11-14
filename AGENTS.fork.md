@@ -20,7 +20,7 @@ Context for any agent (human or AI) working on this branch. Written 2026-11-14.
   (`FORK_*` env; `build-support/renderer.json` pins the same). A full run takes ~75 min; the
   installer is the run's artifact. Same CI change as `ui-hires-precompile` (commit dfe0249).
 
-## PRs in the current build (2026-11-14)
+## What is in the current build (2026-11-14)
 | Repo | PR | What | Status upstream |
 |---|---|---|---|
 | shadgt7 | #51 | FIX-GT7-184: GPU device lost on a junk texture (race start, rygt7#54) | merged, already in shadgt7 main |
@@ -28,6 +28,7 @@ Context for any agent (human or AI) working on this branch. Written 2026-11-14.
 | rygt7 | #49 | FEAT-GTS-265: launcher HD rumble & triggers window with Test buttons (pairs with shadgt7#48) | open |
 | rygt7 | #18 | Launcher HD UI toggle on the Graphics page (`GPU.hd_ui`, off by default) | open |
 | shadgt7 | #28 | HD UI renderer side for rygt7#18 (the toggle does nothing without it) | open |
+| shadgt7 | (ours) | `pr-tests HDUI+TDLSS` commit f2e26c3e: temporal DLSS under HD UI | pr-tests only |
 
 What to test: the GPU-device-lost fix (race starts), HD rumble + adaptive triggers (USB DualSense),
 and the HD UI toggle. New options are off by default; turn them on in the launcher.
@@ -36,10 +37,20 @@ and the HD UI toggle. New options are off by default; turn them on in the launch
 - rygt7#49 vs main: both took launcher version 0.1.4. `loader/Version.cs` is 0.1.6 here and #49's
   CHANGELOG entry sits in a 0.1.6 section (CI checks the two agree).
 - shadgt7#28 vs main (`ryty_game_patch.cpp`, `vk_presenter.cpp`, `vk_rasterizer_native.h`): both
-  sides kept. With `GPU.hd_ui` on, its output-size proxy is shown as-is and DLSS is skipped for that
-  frame; otherwise DLSS gets main's temporal inputs. Main's DLSS-GT7-005 4K-UI patch hits the same
+  sides kept. With `GPU.hd_ui` on, #28 runs DLSS on the scene into its output-size proxy before the
+  UI draws, and the presenter shows that proxy as-is (its own DLSS/FSR pass is skipped). Main's DLSS-GT7-005 4K-UI patch hits the same
   game bytes as #28's HD UI assets patch; it checks the bytes first, so with HD UI on it logs
   "bytes differ, not applied" and stands aside.
+
+## Temporal DLSS + HD UI (the goal of this branch)
+- Main's temporal DLSS (DLSS-GT7-001, on by default with Streamline DLSS and no frame gen) runs in
+  the presenter with depth, motion vectors and jitter, and splits the race HUD out at 2x.
+- #28 alone broke it: its single-frame DLSS call marks DLSS usable, so the game's AA was replaced
+  with jittered colour that never got the inputs (shimmer).
+- Commit `pr-tests HDUI+TDLSS` (shadgt7): #28's DLSS call now gets the frame's temporal inputs in a
+  race frame whose AA pass was replaced; no HUD split / 2x HUD under HD UI (the proxy draws the UI
+  after the scene, at the output size, with the 4K UI images). Menus stay single-frame DLSS.
+- Untested. If it misbehaves: RYGT_DLSS_TEMPORAL=0 (launcher Advanced page) gives #28's plain DLSS.
 
 ## Changing the PR set
 1. Rebuild both `pr-tests` branches from upstream `main` (reset, don't stack on old merges).
