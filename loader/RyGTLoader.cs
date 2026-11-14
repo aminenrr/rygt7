@@ -1519,6 +1519,33 @@ namespace RyGT
         }
     }
 
+    static class AtomicConfig
+    {
+        internal static void Write(string path, string text)
+        {
+            path = Path.GetFullPath(path);
+            string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                using (var stream = new FileStream(temporary, FileMode.CreateNew,
+                                                 FileAccess.Write, FileShare.None))
+                {
+                    using (var writer = new StreamWriter(stream,
+                                                         new UTF8Encoding(false), 1024, true))
+                        writer.Write(text);
+                    stream.Flush(true);
+                }
+                if (File.Exists(path)) File.Replace(temporary, path, null);
+                else File.Move(temporary, path);
+            }
+            finally
+            {
+                try { File.Delete(temporary); } catch { }
+            }
+        }
+    }
+
     class Settings
     {
         public string Game = "", Update = "", Modules = "", Fonts = "";
@@ -2347,6 +2374,10 @@ namespace RyGT
                 try { WriteSetting("GPU", "texture_lod_bias", sharpnessValues[sharpness.SelectedIndex]); }
                 catch (Exception e) { MessageBox.Show(this, "Could not save the setting: " + e.Message); }
             };
+            // HD UI (GPU.hd_ui): the menus and HUD drawn at the window's size, with the game's 4K
+            // images and sharper map icons. The renderer reads the setting itself; off by default.
+            AddOption(graphics, "HD UI (the interface at the window's resolution)", "GPU", "hd_ui", false);
+            graphics.Controls.Add(Hint("Draws the menus and the HUD at the window's size instead of 1920 x 1080, with the game's 4K images and sharper map icons. It needs a window bigger than 1920 x 1080, uses more video memory, and is off with an ultrawide screen."));
             // Shader cache size (GPU.driver_cache_gb, GPU.driver_cache_unlimited; the game gets it as
             // RYGT_DRIVER_CACHE_MAX_MB): the renderer's saved GPU shader cache, like NVIDIA's own
             // setting. 0 turns it off; a bigger cache keeps more cars and tracks compiled, and is saved
@@ -2815,8 +2846,8 @@ namespace RyGT
             if (section == null) { section = new Dictionary<string, object>(); config[sectionName] = section; }
             section[key] = on;
             Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath));
-            File.WriteAllText(ConfigPath, new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(config),
-                              new UTF8Encoding(false));
+            AtomicConfig.Write(ConfigPath,
+                new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(config));
         }
 
         [StructLayout(LayoutKind.Sequential)]
