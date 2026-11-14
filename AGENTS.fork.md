@@ -15,15 +15,24 @@ Context for any agent (human or AI) working on this branch. Written 2026-11-14.
   black cars fixed upstream, temporal DLSS upstream). The compile pack / shader-object quick win and
   the -neo / track-first precompile drafts are dropped; the precompile port replaces them.
 
-## Trophy plan (feature table)
+## Trophy system (feature table, 2026-11-14)
+Branches: shadgt7 `trophies` = pr-tests 7c8e9ced + `trophies-core` (23f9d2cf) + `trophies-toast` (966e10ba);
+rygt7 `trophies` = pr-tests 1168071 + CI commit + `trophies-launcher` (920bad5). Launcher 0.1.7.
+All code is uncompiled on Windows until the first CI run (the launcher compiled with mono mcs -langversion:5).
+
 | Step | ID | What | Status |
 |---|---|---|---|
-| 1 | FIX-GT7-175 | npbind.dat, trophy/*.trp, icon0.png, param.sfo resolved through the app0 layers (update=, game= folders); cause of "No npCommId found". On by default, RYGT_SCE_SYS_LAYERS=0 restores app0 only | planned |
-| 2 | FEAT-GT7 (new) | Trophy key (launcher, DPAPI) -> temp file in RYGT_TROPHY_KEY_FILE; TRP extract to user\trophy\<commId>; TROPCONF check; per-user list seeded; user id 0x10000000+slot -> 1000+slot | planned |
-| 3 | FEAT-GT7 (new) | Unlocks persist across restarts; Platinum unlocks itself | planned |
-| 4 | FEAT-GT7 (new) | In-game toast in Trophy-Notifier style (github.com/aminenrr/Trophy-Notifier src/toast.c), assets imported from the user's Trophy-Notifier install, RYGT_TROPHY_TOAST=0 hides | planned |
-| 5 | FEAT-GT7 (new) | Launcher Trophies section: key field, Test, earned / not earned list with icons, asset import, toast toggle; launcher 0.1.7 | planned |
+| 1 | FIX-GT7-175 | npbind.dat, trophy*.trp, icon0.png, param.sfo, pic1.png read through the app0 layers (`ryty_gpu/ryty_app0.{h,cpp}`: ryGT7\app0, then update, then base game; RYGT_APP0_LAYERS or RyGT.ini update=/game=). Cause of "No npCommId found". On; `RYGT_SCE_SYS_LAYERS=0` = old app0-only | written, CI pending |
+| 2 | FEAT-GT7-185 | `ryty_gpu/ryty_trophy.{h,cpp}`: key only from the file in `RYGT_TROPHY_KEY_FILE` (never logged; put in KeyManager only during TRP::Extract, then restored so keys.json never stores it); extract to `<root>\user\trophy\<npCommId>\{Xml,Icons}` once; TROPCONF checked for `<trophyconf` (bad key -> folder removed); per-user file seeded from TROP.XML | written, CI pending |
+| 3 | FEAT-GT7-185 | Unlocks saved to `<root>\user\home\<1000+slot>\trophy\<npCommId>.xml` (Ryty user 0x10000000+slot, `Ryty::TrophyUserFolder`). Platinum auto-unlock fixed in np_trophy.cpp (counted only DLC group trophies before; now non-P trophies with pid, as shadPS4 main) | written, CI pending |
+| 4 | FEAT-GT7-186 | Pop-up in libSceVideoOut (`src/imgui/trophy_toast_layer.cpp`), Trophy-Notifier `src/toast.c` layout and motion; libSceNpAuth calls export `RytyTrophyToast(name, icon, grade)` via GetProcAddress from AddTrophyToQueue. Assets `<root>\user\trophy_assets\` with fallbacks. `RYGT_TROPHY_TOAST=0` hides; `RYGT_TROPHY_TOAST_TEST=1/B/S/G/P` demo 5 s after start. Do not revive trophy_ui.cpp | written, CI pending |
+| 5 | FEAT-GT7-187 | Launcher Trophies page (`loader/Trophies.cs`): key field (DPAPI `user\trophy.key.dpapi`), Test, earned / not-earned list with icons and times, Refresh, pop-up toggle (`user\trophy.ini` toast=0), Import from Trophy-Notifier. At Play: temp key file -> RYGT_TROPHY_KEY_FILE, deleted on exit (`user\trophy.keyfile.pending` cleans leftovers). Tests: `GT7SetupTests.TrophyChecks` (synthetic TRP). New .cs files go in both build.cmd and test-gt7.cmd; System.Security.dll referenced | written, CI pending |
+
 Nothing trophy-related happens without a key, except step 1.
+
+Unverified: GT7's TROP.XML has pid on base trophies; current_path() is the ryGT7 root in the np DLL; npbind.dat holds NPWR id as ASCII; Trophy-Notifier asset file names; ImGui 1.92 dynamic font added after start; toast subtitles are "You earned a trophy!" / "You earned the Platinum trophy!" (toast.c says "Trophy earned!" / "All trophies earned!", constants SubtitleTrophy/SubtitlePlatinum).
+
+Next after the owner confirms trophies work: `precompile-port` (GT Sport shadGT #40/#42/#44 + RyGTS#46), stacked on this branch. Not started.
 
 ## pr-tests base (as inherited)
 
