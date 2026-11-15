@@ -169,6 +169,14 @@ namespace RyGT
             Check(!TrophyCrypto.LooksLikeTrophyConf(TrophyCrypto.DecryptEntry(trp, entries, "TROPCONF.ESFM", TrophyCrypto.HexToBytes("ffffffffffffffffffffffffffffffff"), id)),
                   "A wrong trophy key fails the test");
             Check(!TrophyCrypto.LooksLikeTrophyConf(TrophyCrypto.DecryptEntry(trp, entries, "TROPCONF.ESFM", key, "NPWR54321_00")), "A wrong npCommId fails the test");
+            string signed = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!--Sce-Np-Trophy-Signature: " + new string('A', 300) + "-->\n" +
+                            "<trophyconf version=\"1.1\" platform=\"ps4\"><npcommid>" + id + "</npcommid></trophyconf>";
+            byte[] signedTrp = SyntheticTrp(Tuple.Create("TROPCONF.ESFM", TrophyCrypto.EncryptEsfm(trpKey, iv, signed), 3u));
+            var signedEntries = TrophyCrypto.ParseTrp(signedTrp);
+            Check(TrophyCrypto.LooksLikeTrophyConf(TrophyCrypto.DecryptEntry(signedTrp, signedEntries, "TROPCONF.ESFM", key, id)),
+                  "TROPCONF with Sony's signature comment accepted (real GT7 layout)");
+            Check(TrophyCrypto.Describe(TrophyCrypto.DecryptEntry(signedTrp, signedEntries, "TROPCONF.ESFM", TrophyCrypto.HexToBytes("ffffffffffffffffffffffffffffffff"), id)) == "unreadable bytes",
+                  "A wrong key is reported as unreadable bytes");
             var list = TrophyCrypto.ParseTrophies(TrophyCrypto.DecryptEntry(trp, entries, "TROP.ESFM", key, id));
             Check(list.Count == 3 && list[0].Grade == 'P' && list[1].Hidden && list[1].Grade == 'G' && list[2].Name == "First" && list[2].Detail == "Bronze one",
                   "TROP.ESFM trophies parsed");

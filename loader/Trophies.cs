@@ -149,18 +149,37 @@ namespace RyGT
             }
         }
 
-        /// The decrypted text is a trophy configuration (<trophyconf after an optional XML declaration).
+        /// The decrypted text is a trophy configuration: an optional BOM and <?xml ?> declaration, Sony's
+        /// <!--Sce-Np-Trophy-Signature: ...--> comment, then <trophyconf. As a fallback, <trophyconf anywhere
+        /// in the first 4 KB counts; a wrong key decrypts to random bytes, which never contain it.
         public static bool LooksLikeTrophyConf(string xml)
         {
             if (string.IsNullOrEmpty(xml)) return false;
-            string head = xml.TrimStart('\uFEFF', ' ', '\r', '\n', '\t');
-            if (head.StartsWith("<?xml", StringComparison.Ordinal))
+            string head = xml.TrimStart('\uFEFF');
+            for (;;)
             {
-                int end = head.IndexOf("?>", StringComparison.Ordinal);
-                if (end < 0) return false;
-                head = head.Substring(end + 2).TrimStart(' ', '\r', '\n', '\t');
+                head = head.TrimStart(' ', '\r', '\n', '\t');
+                string close = head.StartsWith("<?", StringComparison.Ordinal) ? "?>" :
+                               head.StartsWith("<!--", StringComparison.Ordinal) ? "-->" : null;
+                if (close == null) break;
+                int end = head.IndexOf(close, StringComparison.Ordinal);
+                if (end < 0) break;
+                head = head.Substring(end + close.Length);
             }
-            return head.StartsWith("<trophyconf", StringComparison.Ordinal);
+            if (head.StartsWith("<trophyconf", StringComparison.Ordinal)) return true;
+            return xml.Substring(0, Math.Min(xml.Length, 4096)).IndexOf("<trophyconf", StringComparison.Ordinal) >= 0;
+        }
+
+        /// What a failed decrypt looks like, for the Test message: unreadable bytes (wrong key or npCommId)
+        /// or readable XML whose first element is shown. Never includes the key.
+        public static string Describe(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return "nothing readable";
+            string head = text.Substring(0, Math.Min(text.Length, 512));
+            int printable = head.Count(c => c == '\r' || c == '\n' || c == '\t' || (c >= ' ' && c < 0x7f));
+            if (printable < head.Length * 9 / 10) return "unreadable bytes";
+            var tag = Regex.Match(head, "<([A-Za-z][A-Za-z0-9_-]*)");
+            return tag.Success ? "XML starting with <" + tag.Groups[1].Value + ">" : "text without XML";
         }
 
         public static TrpEntry Find(List<TrpEntry> entries, string name)
@@ -630,14 +649,17 @@ namespace RyGT
             var ids = TrophyStore.NpCommIds(root, layers);
             if (ids.Count == 0) throw new InvalidDataException("The game's npCommId was not found (sce_sys\\npbind.dat).");
             byte[] key = TrophyCrypto.HexToBytes(hex);
+            var tried = new List<string>();
             foreach (var id in ids)
             {
                 string xml;
                 try { xml = TrophyCrypto.DecryptEntry(trp, entries, conf.Name, key, id); }
-                catch { continue; }
+                catch (Exception e) { tried.Add(id + ": " + e.Message); continue; }
                 if (TrophyCrypto.LooksLikeTrophyConf(xml)) return id;
+                tried.Add(id + ": " + TrophyCrypto.Describe(xml));
             }
-            throw new InvalidDataException("The key does not decrypt the game's trophy file. Check the key.");
+            throw new InvalidDataException("The key does not decrypt the game's trophy file. Check the key.\n\nTried " +
+                                           string.Join("; ", tried) + " (" + trpPath + ")");
         }
 
         public static TrophySet Load(string root, List<string> layers, string hex)

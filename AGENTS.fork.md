@@ -16,8 +16,9 @@ Context for any agent (human or AI) working on this branch. Written 2026-11-14.
   the -neo / track-first precompile drafts are dropped; the precompile port replaces them.
 
 ## Trophy system (feature table, 2026-11-14)
-Branches: shadgt7 `trophies` = pr-tests 7c8e9ced + `trophies-core` (23f9d2cf) + `trophies-toast` (966e10ba);
-rygt7 `trophies` = pr-tests 1168071 + CI commit + `trophies-launcher` (920bad5). Launcher 0.1.7.
+Branches: shadgt7 `trophies` = pr-tests 5076cda4 + `trophies-core` (23f9d2cf) + `trophies-toast` (966e10ba) + FIX-GT7-188;
+rygt7 `trophies` = pr-tests 1168071 + CI commit + `trophies-launcher` (920bad5) + FIX-GT7-188. Launcher 0.1.8.
+Keep `trophies` merged with the latest `pr-tests` in both forks (owner tests on pr-tests).
 All code is uncompiled on Windows until the first CI run (the launcher compiled with mono mcs -langversion:5).
 
 | Step | ID | What | Status |
@@ -27,6 +28,7 @@ All code is uncompiled on Windows until the first CI run (the launcher compiled 
 | 3 | FEAT-GT7-185 | Unlocks saved to `<root>\user\home\<1000+slot>\trophy\<npCommId>.xml` (Ryty user 0x10000000+slot, `Ryty::TrophyUserFolder`). Platinum auto-unlock fixed in np_trophy.cpp (counted only DLC group trophies before; now non-P trophies with pid, as shadPS4 main) | written, CI pending |
 | 4 | FEAT-GT7-186 | Pop-up in libSceVideoOut (`src/imgui/trophy_toast_layer.cpp`), Trophy-Notifier `src/toast.c` layout and motion; libSceNpAuth calls export `RytyTrophyToast(name, icon, grade)` via GetProcAddress from AddTrophyToQueue. Assets `<root>\user\trophy_assets\` with fallbacks. `RYGT_TROPHY_TOAST=0` hides; `RYGT_TROPHY_TOAST_TEST=1/B/S/G/P` demo 5 s after start. Do not revive trophy_ui.cpp | written, CI pending |
 | 5 | FEAT-GT7-187 | Launcher Trophies page (`loader/Trophies.cs`): key field (DPAPI `user\trophy.key.dpapi`), Test, earned / not-earned list with icons and times, Refresh, pop-up toggle (`user\trophy.ini` toast=0), Import from Trophy-Notifier. At Play: temp key file -> RYGT_TROPHY_KEY_FILE, deleted on exit (`user\trophy.keyfile.pending` cleans leftovers). Tests: `GT7SetupTests.TrophyChecks` (synthetic TRP). New .cs files go in both build.cmd and test-gt7.cmd; System.Security.dll referenced | written, CI pending |
+| fix | FIX-GT7-188 | Real decrypted TROPCONF has `<!--Sce-Np-Trophy-Signature: ...-->` (and `<?xml?>`) before `<trophyconf`; both checks (launcher `LooksLikeTrophyConf`, renderer `LooksDecrypted`) skip declarations and comments, fallback `<trophyconf` in the first 4 KB. Owner's key worked in shadPS4 but failed Test in 0.1.7. Test now lists what each npCommId decrypted to | written, CI pending |
 
 Nothing trophy-related happens without a key, except step 1.
 

@@ -6,6 +6,14 @@ The version lives in `loader/Version.cs`. To release a change, bump
 `LauncherVersion.Value` there and add a section here with the same number;
 CI fails when the two disagree.
 
+## 0.1.8 - 2026-11-15
+
+* FIX-GT7-188: the trophy key Test (and the in-game extraction) rejected keys that work in shadPS4. Real
+  trophy files carry Sony's <!--Sce-Np-Trophy-Signature--> comment before <trophyconf>, which the check did
+  not allow. Test now also says what it tried when a key really fails.
+* Renderer: same fix for the in-game trophy extraction (FIX-GT7-188); HD UI keeps temporal DLSS in menus
+  (pr-tests renderer 5076cda4).
+
 ## 0.1.7 - 2026-11-14
 
 * FEAT-GT7-187: a Trophies page. Enter your own 32-character trophy key once (Show / Hide); it is kept
