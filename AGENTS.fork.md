@@ -17,7 +17,7 @@ Context for any agent (human or AI) working on this branch. Written 2026-11-14.
 
 ## Trophy system (feature table, 2026-11-14)
 Branches: shadgt7 `trophies` = pr-tests 5076cda4 + `trophies-core` (23f9d2cf) + `trophies-toast` (966e10ba) + FIX-GT7-188;
-rygt7 `trophies` = pr-tests 1168071 + CI commit + `trophies-launcher` (920bad5) + FIX-GT7-188. Launcher 0.1.8.
+rygt7 `trophies` = pr-tests + CI commit + `trophies-launcher` (920bad5) + FIX-GT7-188 + FEAT-GT7-189. Launcher 0.1.9.
 Keep `trophies` merged with the latest `pr-tests` in both forks (owner tests on pr-tests).
 All code is uncompiled on Windows until the first CI run (the launcher compiled with mono mcs -langversion:5).
 
@@ -29,6 +29,7 @@ All code is uncompiled on Windows until the first CI run (the launcher compiled 
 | 4 | FEAT-GT7-186 | Pop-up in libSceVideoOut (`src/imgui/trophy_toast_layer.cpp`), Trophy-Notifier `src/toast.c` layout and motion; libSceNpAuth calls export `RytyTrophyToast(name, icon, grade)` via GetProcAddress from AddTrophyToQueue. Assets `<root>\user\trophy_assets\` with fallbacks. `RYGT_TROPHY_TOAST=0` hides; `RYGT_TROPHY_TOAST_TEST=1/B/S/G/P` demo 5 s after start. Do not revive trophy_ui.cpp | written, CI pending |
 | 5 | FEAT-GT7-187 | Launcher Trophies page (`loader/Trophies.cs`): key field (DPAPI `user\trophy.key.dpapi`), Test, earned / not-earned list with icons and times, Refresh, pop-up toggle (`user\trophy.ini` toast=0), Import from Trophy-Notifier. At Play: temp key file -> RYGT_TROPHY_KEY_FILE, deleted on exit (`user\trophy.keyfile.pending` cleans leftovers). Tests: `GT7SetupTests.TrophyChecks` (synthetic TRP). New .cs files go in both build.cmd and test-gt7.cmd; System.Security.dll referenced | written, CI pending |
 | fix | FIX-GT7-188 | Real decrypted TROPCONF has `<!--Sce-Np-Trophy-Signature: ...-->` (and `<?xml?>`) before `<trophyconf`; both checks (launcher `LooksLikeTrophyConf`, renderer `LooksDecrypted`) skip declarations and comments, fallback `<trophyconf` in the first 4 KB. Owner's key worked in shadPS4 but failed Test in 0.1.7. Test now lists what each npCommId decrypted to | written, CI pending |
+| polish | FEAT-GT7-189 | Launcher 0.1.9: Trophies page async (pool thread + BeginInvoke, generation guard), icon cache `user\trophy\<id>\launcher_icons`, one painted `TrophyRowView` per row. Test success opens `TrophyPreviewForm` (card 660x112 like the game, grade picker, sound, "next time I play" -> `user\trophy.ini` testtoast=B/S/G/P, taken once at Play -> RYGT_TROPHY_TOAST_TEST). Built-in set `loader/trophy_assets/` (original cups/chimes from `tools/gen_*.py`, Inter SemiBold OFL) embedded as `trophy.<file>` (/resource in build.cmd and test-gt7.cmd), written to `user\trophy_builtin` at Play. Custom folder `user\trophy_assets` + README.txt, button "Open custom trophy images and sounds folder" (Notifier import removed). Renderer: each file custom then builtin; progress `_sd\trophies_progress\<NPWR>.xml` (`<1000+slot>\` for others), copy-once from user\home, `RYGT_TROPHY_PROGRESS_SD=0` = old place. Tests: `GT7SetupTests.TrophyFileChecks`. SST font not shipped (Sony) | written, CI pending |
 
 Nothing trophy-related happens without a key, except step 1.
 

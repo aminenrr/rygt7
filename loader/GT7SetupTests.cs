@@ -146,6 +146,29 @@ namespace RyGT
             return b.ToArray();
         }
 
+        // FEAT-GT7-189: the built-in pop-up files, the custom folder and where progress is read.
+        internal static void TrophyFileChecks(string root)
+        {
+            Directory.CreateDirectory(root);
+            Check(TrophyStore.WriteBuiltinAssets(root) == TrophyStore.BuiltinFiles.Length, "Every built-in trophy file is embedded in the launcher");
+            Check(TrophyStore.CupFile(root, 'G') == Path.Combine(TrophyStore.BuiltinDir(root), "gold.png"), "The built-in gold cup is used without a custom one");
+            Check(TrophyStore.FontFile(root) == Path.Combine(TrophyStore.BuiltinDir(root), "font.ttf"), "The built-in font is used without a custom one");
+            string custom = TrophyStore.EnsureCustomFolder(root);
+            Check(File.Exists(Path.Combine(custom, TrophyStore.ReadmeName)), "The custom folder gets its README.txt");
+            File.WriteAllText(Path.Combine(custom, "ps5_platinum.wav"), "x");
+            Check(TrophyStore.SoundFile(root, true) == Path.Combine(custom, "ps5_platinum.wav"), "An older custom sound name still replaces the built-in one");
+            Check(TrophyStore.SoundFile(root, false) == Path.Combine(TrophyStore.BuiltinDir(root), "trophy.wav"), "A sound the custom folder lacks stays built in");
+            Check(TrophyStore.TestToastPending(root) == '\0', "No test pop-up by default");
+            TrophyStore.SetTestToast(root, 'P');
+            Check(TrophyStore.TakeTestToast(root) == 'P' && TrophyStore.TestToastPending(root) == '\0', "The next-play test pop-up shows once");
+            string id = "NPWR12345_00";
+            Put(Path.Combine(root, "user", "home", "1000", "trophy"), id + ".xml", "<trophyconf/>");
+            Check(TrophyStore.UnlockFiles(root, id).Count == 1, "Progress not moved yet is read from user\\home");
+            Put(TrophyStore.ProgressDir(root), id + ".xml", "<trophyconf/>");
+            var files = TrophyStore.UnlockFiles(root, id);
+            Check(files.Count == 2 && files[0] == Path.Combine(TrophyStore.ProgressDir(root), id + ".xml"), "Progress in _sd\\trophies_progress comes first");
+        }
+
         internal static void TrophyChecks()
         {
             byte[] key = TrophyCrypto.HexToBytes("000102030405060708090a0b0c0d0e0f");
@@ -318,6 +341,7 @@ namespace RyGT
                 LoaderForm.DlssDetailVariables("off", out detailBias, out detailExtra);
                 Check(detailBias == "0" && detailExtra == null, "DLSS texture detail Off: no bias");
                 TrophyChecks();
+                TrophyFileChecks(Path.Combine(root, "trophy-files"));
                 Console.WriteLine("PASS: " + checks + " GT7 setup checks");
                 return 0;
             }

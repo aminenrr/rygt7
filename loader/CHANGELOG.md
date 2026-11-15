@@ -6,6 +6,23 @@ The version lives in `loader/Version.cs`. To release a change, bump
 `LauncherVersion.Value` there and add a section here with the same number;
 CI fails when the two disagree.
 
+## 0.1.9 - 2026-11-15
+
+* FEAT-GT7-189: the Trophies page no longer freezes the launcher. The list is read in the background
+  ("Loading trophies...") and each row is one light control; trophy icons are kept small in
+  user\trophy\<npCommId>\launcher_icons after the first read.
+* A passing key Test now shows the trophy pop-up as the game draws it, with its sound, for Bronze, Silver, Gold
+  or Platinum (also from Pop-ups > Preview). "Show this test pop-up the next time I play" shows it once in game.
+* ryGT7 ships its own pop-up files: original cups and chimes and the Inter font (SIL OFL 1.1), written to
+  user\trophy_builtin at Play. "Open custom trophy images and sounds folder" replaces the Trophy-Notifier
+  import: files put in user\trophy_assets (bronze/silver/gold/platinum.png, trophy.wav, platinum.wav,
+  font.ttf or font.otf; README.txt there lists sizes and formats) replace the built-in ones. Older names
+  (ps5_trophy.wav, ps5_platinum.wav, fonts\SSTRg.ttf) still work.
+* Trophy progress moves next to the saves: _sd\trophies_progress\<npCommId>.xml (other players in
+  1000+slot folders). The old user\home\<1000+slot>\trophy file is copied once and kept as a backup;
+  RYGT_TROPHY_PROGRESS_SD=0 keeps the old place.
+* Renderer: the same pop-up files and progress place (FEAT-GT7-189), latest pr-tests renderer.
+
 ## 0.1.8 - 2026-11-15
 
 * FIX-GT7-188: the trophy key Test (and the in-game extraction) rejected keys that work in shadPS4. Real
