@@ -174,7 +174,7 @@ namespace RyGT
         /// or readable XML whose first element is shown. Never includes the key.
         public static string Describe(string text)
         {
-            if (string.IsNullOrEmpty(text)) return "nothing readable";
+            if (string.IsNullOrEmpty(text)) return "unreadable bytes"; // DecryptEsfm found no '>'
             string head = text.Substring(0, Math.Min(text.Length, 512));
             int printable = head.Count(c => c == '\r' || c == '\n' || c == '\t' || (c >= ' ' && c < 0x7f));
             if (printable < head.Length * 9 / 10) return "unreadable bytes";
