@@ -118,6 +118,14 @@ and the HD UI toggle. New options are off by default; turn them on in the launch
   (built / skipped / failed / time). New switch, off by default. Test: race the same cars twice.
   Watch for stale entries and VRAM. Never-loaded content still compiles the first time.
 - The full shadGT #40/#42/#44 precompile port was handed to the other fork agent on 2026-11-14.
+- Planned after the prewarm (owner OK 2026-11-16): **shared manifest, load-screen translate.** A
+  manifest record has no shader code (inputs, guest reads, SPIR-V hash); the code stays in the
+  local capture, so a shared manifest alone can't translate content the player never loaded. Idea:
+  GT7 puts a car's or track's code in guest memory during the loading screen. Find it by hash, then
+  translate the shared manifest's records for it on low-priority background threads (like
+  PRETRANSLATE's 4), not on the command thread. What isn't done by race start keeps going in the
+  background. New switch, off by default. Unverified: when the code really lands in memory, and
+  how long loading screens give us.
 
 ## Fix log (keep this up to date)
 Every new commit on either `pr-tests` branch gets a line here: date, repo, commit, fix or switch,
@@ -131,5 +139,6 @@ default, CI run, test result.
 | 2026-11-16 | shadgt7 | c5569738 | FIX-GT7-187 3D partial fill device loss | always | 43980072900 | pending |
 | 2026-11-16 | shadgt7 | f70fee41 | MENU_TDLSS on by default | on | 43980072900 | pending |
 | planned | shadgt7 | - | pipeline record + title prewarm | off | - | - |
+| planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
 
 - Untouched: trophies upstream PRs (RyGT-Team/shadgt7#54, rygt7#58, open).
