@@ -12,6 +12,9 @@ Only these go in:
   - RyGT7.exe and launcher\\ (original background artwork and its note)
   - patches\\CUSA24769.xml and its provenance/credits from this repository
   - README.txt, LICENSE, licenses\\ and manifest.json (SHA-256 of every file, source commits)
+  - with --dlss-plugin and --dlss-sdk-license (FEAT-GTS-269): dlss\\ryGT_dlss.dll alone (NVIDIA's runtime comes
+    from the launcher's download button), with licenses\\ryGT_dlss\\LICENSE (MIT) and
+    licenses\\NVIDIA-DLSS-SDK\\LICENSE.txt (NVIDIA's NGX loader inside the plugin)
   - with --server and --shadnet, server\\ for hosting online play: RyGTServer.exe (server/build.cmd),
     libzstd.dll, this repository's server/data (RyGTServer's own replies) as server-data, and
     shadNet's program files from the given folder. shadNet's data (accounts, logs) is left out and
@@ -177,6 +180,8 @@ def main():
                         help="ryty-feel-test.exe from the renderer build (shadgt7 FEAT-GT7-179): the launcher's "
                              "HD rumble & adaptive triggers Test buttons run it; without it the window's "
                              "settings still work but Test cannot play")
+    parser.add_argument("--dlss-plugin", type=Path, help="ryGT_dlss.dll built with plugins/dlss/build.cmd")
+    parser.add_argument("--dlss-sdk-license", type=Path, help="the DLSS SDK's LICENSE.txt it was built with")
     parser.add_argument("--name")
     parser.add_argument("--zip", action="store_true")
     args = parser.parse_args()
@@ -210,6 +215,13 @@ def main():
             raise SystemExit("ryty-feel-test.exe not found (build the renderer's ryty_feel_test target): %s"
                              % args.feel_test)
         package.put(args.feel_test, "tools\\ryty-feel-test.exe")
+    # FEAT-GTS-269: the DLSS plugin, alone in dlss\\; its own licence (MIT) and NVIDIA's for the NGX loader in it.
+    if args.dlss_plugin:
+        if not args.dlss_sdk_license:
+            raise SystemExit("--dlss-plugin needs --dlss-sdk-license (NVIDIA's licence for the NGX loader inside it)")
+        package.put(args.dlss_plugin, "dlss\\ryGT_dlss.dll")
+        package.put(REPO / "plugins" / "dlss" / "LICENSE", "licenses\\ryGT_dlss\\LICENSE")
+        package.put(args.dlss_sdk_license, "licenses\\NVIDIA-DLSS-SDK\\LICENSE.txt")
     for n in ("CUSA24769.xml", "README.md", "Proper-Offline-Patch-README.txt"):
         package.put(REPO / "patches" / n, "patches\\" + n)
     package.put(REPO / "loader" / "launcher" / "background.png", "launcher\\background.png")

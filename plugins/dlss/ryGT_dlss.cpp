@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: Copyright 2026 RyGT Team
 // SPDX-License-Identifier: MIT
 //
 // ryGT's optional DLSS plugin (dlss\ryGT_dlss.dll). It scales the finished game picture with

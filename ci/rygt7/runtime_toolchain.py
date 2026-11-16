@@ -10,6 +10,9 @@ in ci/rygt7/runtime-toolchain.json (file names and SHA-256s), the same pins as R
                                                       package; prints the folder for FFMPEG_PREBUILT_DIR
   python ci/rygt7/runtime_toolchain.py fidelityfx <folder>  download and verify AMD's FidelityFX runtime
                                                       (amd_fidelityfx_vk.dll and its license); prints the folder
+  python ci/rygt7/runtime_toolchain.py dlss-sdk <folder>    download and verify NVIDIA's DLSS SDK headers,
+                                                      nvsdk_ngx_d.lib and LICENSE.txt (to build the DLSS plugin);
+                                                      prints the folder for DLSS_SDK
   python ci/rygt7/runtime_toolchain.py pin <cutoff date>  (maintainers) rewrite the pins: each package at the
                                                       newest version MSYS2 published on or before the date
 """
@@ -154,6 +157,22 @@ def fidelityfx(folder):
     return folder
 
 
+def dlss_sdk(folder):
+    """FEAT-GTS-269: NVIDIA's DLSS SDK files the DLSS plugin builds with, each checked by SHA-256."""
+    pinned = json.loads(PINS.read_text(encoding='utf-8-sig'))['dlss_sdk']
+    folder = Path(folder) / 'dlss-sdk'
+    for entry in pinned['files']:
+        target = folder / PurePosixPath(entry['path'])
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.exists() or sha256(target) != entry['sha256']:
+            with urllib.request.urlopen(pinned['base_url'] + '/' + entry['path']) as response, open(target, 'wb') as output:
+                output.write(response.read())
+        if sha256(target) != entry['sha256']:
+            target.unlink()
+            raise RuntimeError('SHA-256 mismatch for DLSS SDK ' + entry['path'])
+    return folder
+
+
 def pin(cutoff):
     """Rewrites runtime-toolchain.json from MSYS2's file list (maintainers only)."""
     limit = datetime.strptime(cutoff, '%Y-%m-%d')
@@ -196,6 +215,8 @@ if __name__ == '__main__':
         print(ffmpeg(sys.argv[2]))
     elif len(sys.argv) == 3 and sys.argv[1] == 'fidelityfx':
         print(fidelityfx(sys.argv[2]))
+    elif len(sys.argv) == 3 and sys.argv[1] == 'dlss-sdk':
+        print(dlss_sdk(sys.argv[2]))
     elif len(sys.argv) == 3 and sys.argv[1] == 'pin':
         pin(sys.argv[2])
     else:

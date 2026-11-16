@@ -16,6 +16,10 @@ from pathlib import Path, PurePosixPath
 FIDELITYFX = json.loads(Path(__file__).with_name('runtime-toolchain.json').read_text(encoding='utf-8-sig'))['fidelityfx']
 FIDELITYFX_FILES = (('amd_fidelityfx_vk.dll', 'dll_sha256'), ('amd_fidelityfx_vk-LICENSE.txt', 'license_sha256'))
 GCC_DLLS = ('libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll')
+# FEAT-GTS-269: the DLSS plugin, built here (plugins/dlss) and packaged alone in dlss\. It contains NVIDIA's
+# NGX loader; NVIDIA's licence (the pinned SDK's LICENSE.txt) goes in licenses\NVIDIA-DLSS-SDK.
+DLSS_SDK = json.loads(Path(__file__).with_name('runtime-toolchain.json').read_text(encoding='utf-8-sig'))['dlss_sdk']
+DLSS_PLUGIN = 'dlss/ryGT_dlss.dll'
 RENDERER_LIBS = ('libSceVideoOut.prx', 'libSceAudio3d.prx', 'libSceAjm.prx',
                  'libSceNgs2.prx', 'libSceZlib.prx', 'libSceDiscMap.prx',
                  'libSceScreenShot.prx', 'libSceNpAuth.prx')
@@ -90,6 +94,14 @@ def assemble(args):
             raise ValueError(f'{name} does not match the pinned {FIDELITYFX["version"]}')
         shutil.copyfile(args.fidelityfx / name, args.runtime / name)
         origins[name] = {'origin': 'amd-fidelityfx-sdk', 'version': FIDELITYFX['version']}
+    dlss = getattr(args, 'dlss_plugin', None)
+    if dlss is not None:
+        license_pin = {entry['path']: entry['sha256'] for entry in DLSS_SDK['files']}['LICENSE.txt']
+        if sha(args.dlss_sdk / 'LICENSE.txt') != license_pin:
+            raise ValueError(f'NVIDIA DLSS SDK LICENSE.txt does not match the pinned {DLSS_SDK["version"]}')
+        (args.runtime / 'dlss').mkdir()
+        shutil.copyfile(dlss, args.runtime / DLSS_PLUGIN)
+        origins[DLSS_PLUGIN] = {'origin': 'rygt7-source-build', 'contains': 'NVIDIA NGX loader (' + DLSS_SDK['version'] + ')'}
     for name, metadata in origins.items():
         metadata['sha256'] = sha(args.runtime / name)
     info = {'schema': 1, 'rygt7_commit': args.source_sha, 'renderer_commit': args.renderer_sha,
@@ -112,7 +124,8 @@ def assemble(args):
 def package(args):
     spec = importlib.util.spec_from_file_location('gt7_packager', args.source / 'build-support/package_release.py')
     module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
-    module.PROVENANCE = 'Per-file provenance and hashes are recorded in BUILD_INFO.json; every file in this CI package is built from source at the recorded revisions, except the pinned MinGW runtime DLLs and AMD FidelityFX runtime.'
+    module.PROVENANCE = ('Per-file provenance and hashes are recorded in BUILD_INFO.json; every file in this CI package is built from source at the recorded revisions, except the pinned MinGW runtime DLLs and AMD FidelityFX runtime. '
+                         'dlss/ryGT_dlss.dll is built here too and contains NVIDIA\'s NGX loader (licenses/NVIDIA-DLSS-SDK).')
     sys.argv = ['package_release.py', '--runtime', str(args.runtime), '--launcher', str(args.launcher),
                 '--converter', str(args.converter), '--renderer-source', str(args.renderer_source),
                 '--renderer-deps-source', str(getattr(args, 'renderer_deps_source', args.renderer_source / 'externals')),
@@ -120,6 +133,8 @@ def package(args):
                 '--feel-test', str(one_file(args.renderer_build, FEEL_TEST)),
                 '--deps-source', str(getattr(args, 'deps_source', args.source / '3rdparty')),
                 '--out', str(args.out), '--name', args.name]
+    if getattr(args, 'dlss_plugin', None) is not None:
+        sys.argv += ['--dlss-plugin', str(args.runtime / DLSS_PLUGIN), '--dlss-sdk-license', str(args.dlss_sdk / 'LICENSE.txt')]
     module.main()
     folder = args.out / args.name
     shutil.copyfile(args.info, folder / 'BUILD_INFO.json')
@@ -156,6 +171,8 @@ def main():
     for name in ('source','fidelityfx','runtime','built-libs','renderer-build','stubs','ucrt','info','launcher','converter','renderer-source','wheel-probe','out'):
         p.add_argument('--' + name, type=Path, required=True)
     p.add_argument('--toolchain-info', type=Path)
+    p.add_argument('--dlss-plugin', type=Path, required=True)
+    p.add_argument('--dlss-sdk', type=Path, required=True)
     for name in ('source-sha','renderer-sha','renderer-configured-url','renderer-fetch-url','name'):
         p.add_argument('--' + name, required=True)
     args = p.parse_args()

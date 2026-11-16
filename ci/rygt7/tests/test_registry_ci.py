@@ -47,7 +47,7 @@ class Validation(unittest.TestCase):
         self.info = {'schema': 1, 'rygt7_commit': COMMIT, 'renderer_commit': m.RENDERER,
                      'renderer_configured_url': m.CONFIGURED, 'renderer_fetch_url': m.FETCHED,
                      'renderer_vma_patch': {'path':'externals/vma-patches/0001-trim-empty-default-blocks.patch','sha256':'989c12d4729935f11c05a13eeab0fc96fc99e53055c97bd0b81bce04448d6180','target':'include/vk_mem_alloc.h','verified':True}, 'ci_control': {'repository':None,'commit':None,'run_url':None,'attempt':None},
-                     'runtime_files': {p: {'origin': origin(p), 'sha256': m.digest(b'fixture')} for p in self.files if p.startswith('libs/') or p in AMD}}
+                     'runtime_files': {p: {'origin': origin(p), 'sha256': m.digest(b'fixture')} for p in self.files if p.startswith(('libs/', 'dlss/')) or p in AMD}}
     def write(self, extra=(), info=None, bad_hash=False):
         files = dict(self.files); files['BUILD_INFO.json'] = json.dumps(info or self.info).encode()
         records = [{'path': p, 'bytes': len(b), 'sha256': m.digest(b)} for p,b in files.items()]
@@ -71,6 +71,15 @@ class Validation(unittest.TestCase):
             value=self.files.pop(path); self.write()
             with self.assertRaises(ValueError): m.validate(self.folder, COMMIT)
             self.files[path]=value
+    def test_dlss_folder_holds_only_the_plugin(self):
+        # FEAT-GTS-269: NVIDIA's runtime is never packaged; players download it with the launcher.
+        for path in ('dlss/nvngx_dlss.dll', 'dlss/sl.interposer.dll'):
+            self.write(extra=[path])
+            with self.assertRaises(ValueError): m.validate(self.folder, COMMIT)
+        for path in ('dlss/ryGT_dlss.dll', 'licenses/NVIDIA-DLSS-SDK/LICENSE.txt', 'licenses/ryGT_dlss/LICENSE'):
+            value = self.files.pop(path); self.write()
+            with self.assertRaises(ValueError): m.validate(self.folder, COMMIT)
+            self.files[path] = value
     def test_unsafe_and_duplicate(self):
         for path in ('../escape', 'GAME/eboot.bin', 'rygt7.EXE', 'docs/app0/file', 'libs/sce_module/file', 'user/file'):
             self.write(extra=[path])

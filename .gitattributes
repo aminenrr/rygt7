@@ -13,3 +13,5 @@
 *.elf binary
 *.dll binary
 *.exe binary
+*.wav binary
+*.ttf binary

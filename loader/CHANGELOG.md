@@ -6,7 +6,31 @@ The version lives in `loader/Version.cs`. To release a change, bump
 `LauncherVersion.Value` there and add a section here with the same number;
 CI fails when the two disagree.
 
-## 0.1.6 - 2026-11-14
+## 0.1.7 - 2026-11-15
+
+* FEAT-GT7-187: a Trophies page. Enter your own 32-character trophy key once (Show / Hide); it is kept
+  encrypted for your Windows account (DPAPI, user\trophy.key.dpapi) and never written in plain text or
+  logged. Test checks it against the game's sce_sys\trophy\trophy00.trp (ryGT7's app0, then the update and
+  game folders), accepting Sony's <!--Sce-Np-Trophy-Signature--> comment before <trophyconf>
+  (FIX-GT7-188), and says what it tried when a key really fails. A passing Test shows the trophy pop-up as
+  the game draws it, with its sound, for Bronze, Silver, Gold or Platinum (also from Pop-ups > Preview);
+  "Show this test pop-up the next time I play" shows it once in game.
+* The page lists every trophy with its icon, name, description and grade, hidden ones until earned, whether
+  it is earned and when, with "N of M earned" and Refresh. It is read in the background ("Loading
+  trophies...") so the launcher never freezes, and icons are kept small in
+  user\trophy\<npCommId>\launcher_icons after the first read (FEAT-GT7-189).
+* At Play the key reaches the game through a temporary file only your account can read
+  (RYGT_TROPHY_KEY_FILE), deleted when GT7 exits. "Show trophy pop-ups" is on by default.
+* ryGT7 ships its own pop-up files: original cups and chimes and the Inter font (SIL OFL 1.1), embedded in
+  RyGT7.exe and written to user\trophy_builtin at Play. "Open custom trophy images and sounds folder" opens
+  user\trophy_assets: files put there (bronze/silver/gold/platinum.png, trophy.wav, platinum.wav, font.ttf or
+  font.otf; README.txt there lists sizes and formats) replace the built-in ones, one by one.
+* Trophy progress is kept next to the saves: _sd\trophies_progress\<npCommId>.xml (other players in
+  1000+slot folders). An older user\home\<1000+slot>\trophy file is copied once and kept as a backup;
+  RYGT_TROPHY_PROGRESS_SD=0 keeps the old place.
+* Renderer: trophy extraction, unlocks and pop-ups (shadgt7 FIX-GT7-175, FEAT-GT7-185/186/189, FIX-GT7-188).
+
+## 0.1.6 - 2026-11-15
 
 * FEAT-GTS-265: Controls > Controller has an HD rumble & triggers window (it replaces the Feedback slider,
   which moved into it). A slider per effect, 0-200% with 0 turning it off: HD rumble overall, engine, road
@@ -14,6 +38,10 @@ CI fails when the two disagree.
   resistance, how much the resistance follows speed, braking and revs, ABS (wheel-lock) and wheelspin
   vibration. Changes apply while playing (renderer shadgt7 FEAT-GT7-179). Each effect has a Test button
   that plays it on the DualSense through tools\ryty-feel-test.exe, game running or not.
+
+* FEAT-GTS-269: Settings > About carries NVIDIA's DLSS attribution, as the NVIDIA RTX SDKs License
+  asks of software shipping its NGX loader: the package now includes the DLSS plugin
+  (dlss\ryGT_dlss.dll), which contains it. NVIDIA's runtime still comes from Download NVIDIA DLSS.
 
 ## 0.1.5 - 2026-11-14
 

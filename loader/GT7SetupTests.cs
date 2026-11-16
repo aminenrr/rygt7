@@ -125,6 +125,95 @@ namespace RyGT
             Check(BitConverter.ToUInt16(image, 0x608) == 0x17c && BitConverter.ToUInt16(image, 0x60a) == (0xa000 | 0x170), "Only the overlapping relocation disabled");
             Check(image.Skip(0x400 + 0x180).Take(4).All(b => b == 0xc3), "Patch bytes written");
         }
+        // FEAT-GT7-187: the TRP / ESFM reading of the Trophies page, on a synthetic encrypted trophy file.
+        static void Be32(System.Collections.Generic.List<byte> b, long v) { for (int s = 24; s >= 0; s -= 8) b.Add((byte)(v >> s)); }
+        static void Be64(System.Collections.Generic.List<byte> b, long v) { Be32(b, v >> 32); Be32(b, v & 0xffffffffL); }
+
+        internal static byte[] SyntheticTrp(params Tuple<string, byte[], uint>[] files)
+        {
+            var b = new System.Collections.Generic.List<byte>();
+            Be32(b, TrophyCrypto.TrpMagic); Be32(b, 3); Be64(b, 0); Be32(b, files.Length); Be32(b, TrophyCrypto.EntrySize); Be32(b, 0);
+            while (b.Count < TrophyCrypto.HeaderSize) b.Add(0);
+            long offset = TrophyCrypto.HeaderSize + files.Length * TrophyCrypto.EntrySize;
+            foreach (var f in files)
+            {
+                var name = new byte[32];
+                Encoding.ASCII.GetBytes(f.Item1).CopyTo(name, 0);
+                b.AddRange(name); Be64(b, offset); Be64(b, f.Item2.Length); Be32(b, f.Item3); b.AddRange(new byte[12]);
+                offset += f.Item2.Length;
+            }
+            foreach (var f in files) b.AddRange(f.Item2);
+            return b.ToArray();
+        }
+
+        // FEAT-GT7-189: the built-in pop-up files, the custom folder and where progress is read.
+        internal static void TrophyFileChecks(string root)
+        {
+            Directory.CreateDirectory(root);
+            Check(TrophyStore.WriteBuiltinAssets(root) == TrophyStore.BuiltinFiles.Length, "Every built-in trophy file is embedded in the launcher");
+            Check(TrophyStore.CupFile(root, 'G') == Path.Combine(TrophyStore.BuiltinDir(root), "gold.png"), "The built-in gold cup is used without a custom one");
+            Check(TrophyStore.FontFile(root) == Path.Combine(TrophyStore.BuiltinDir(root), "font.ttf"), "The built-in font is used without a custom one");
+            string custom = TrophyStore.EnsureCustomFolder(root);
+            Check(File.Exists(Path.Combine(custom, TrophyStore.ReadmeName)), "The custom folder gets its README.txt");
+            File.WriteAllText(Path.Combine(custom, "ps5_platinum.wav"), "x");
+            Check(TrophyStore.SoundFile(root, true) == Path.Combine(custom, "ps5_platinum.wav"), "An older custom sound name still replaces the built-in one");
+            Check(TrophyStore.SoundFile(root, false) == Path.Combine(TrophyStore.BuiltinDir(root), "trophy.wav"), "A sound the custom folder lacks stays built in");
+            Check(TrophyStore.TestToastPending(root) == '\0', "No test pop-up by default");
+            TrophyStore.SetTestToast(root, 'P');
+            Check(TrophyStore.TakeTestToast(root) == 'P' && TrophyStore.TestToastPending(root) == '\0', "The next-play test pop-up shows once");
+            string id = "NPWR12345_00";
+            Put(Path.Combine(root, "user", "home", "1000", "trophy"), id + ".xml", "<trophyconf/>");
+            Check(TrophyStore.UnlockFiles(root, id).Count == 1, "Progress not moved yet is read from user\\home");
+            Put(TrophyStore.ProgressDir(root), id + ".xml", "<trophyconf/>");
+            var files = TrophyStore.UnlockFiles(root, id);
+            Check(files.Count == 2 && files[0] == Path.Combine(TrophyStore.ProgressDir(root), id + ".xml"), "Progress in _sd\\trophies_progress comes first");
+        }
+
+        internal static void TrophyChecks()
+        {
+            byte[] key = TrophyCrypto.HexToBytes("000102030405060708090a0b0c0d0e0f");
+            string id = "NPWR12345_00";
+            byte[] trpKey = TrophyCrypto.DeriveTrpKey(key, id);
+            // openssl enc -aes-128-cbc -K 000102..0f -iv 0 -nopad of "NPWR12345_00" + 4 zero bytes
+            Check(BitConverter.ToString(trpKey).Replace("-", "").ToLowerInvariant() == "5340e96ec12aa58cf6cc17792f17ffad", "Trophy key derivation (AES-128-CBC of the npCommId)");
+            byte[] iv = Enumerable.Range(0, 16).Select(i => (byte)(0xA0 + i)).ToArray();
+            string conf = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<trophyconf version=\"1.1\"><npcommid>" + id + "</npcommid></trophyconf>";
+            string trop = "<trophyconf version=\"1.1\"><title-name>Gran Turismo&#174; 7</title-name>" +
+                          "<trophy id=\"000\" hidden=\"no\" ttype=\"P\" pid=\"-1\"><name>All of them</name><detail>Every trophy</detail></trophy>" +
+                          "<trophy id=\"001\" hidden=\"yes\" ttype=\"G\" pid=\"000\"><name>Secret</name><detail>Hidden one</detail></trophy>" +
+                          "<trophy id=\"002\" hidden=\"no\" ttype=\"B\" pid=\"000\"><name>First</name><detail>Bronze one</detail></trophy></trophyconf>";
+            byte[] trp = SyntheticTrp(Tuple.Create("TROPCONF.ESFM", TrophyCrypto.EncryptEsfm(trpKey, iv, conf), 3u),
+                                      Tuple.Create("TROP.ESFM", TrophyCrypto.EncryptEsfm(trpKey, iv, trop), 3u),
+                                      Tuple.Create("ICON0.PNG", new byte[] { 0x89, 0x50, 0x4E, 0x47 }, 0u));
+            var entries = TrophyCrypto.ParseTrp(trp);
+            Check(entries.Count == 3 && entries[0].Name == "TROPCONF.ESFM" && entries[0].Flag == 3 && entries[2].Length == 4, "TRP entry table read");
+            string decrypted = TrophyCrypto.DecryptEntry(trp, entries, "TROPCONF.ESFM", key, id);
+            Check(decrypted == conf && TrophyCrypto.LooksLikeTrophyConf(decrypted), "TROPCONF.ESFM decrypted");
+            Check(!TrophyCrypto.LooksLikeTrophyConf(TrophyCrypto.DecryptEntry(trp, entries, "TROPCONF.ESFM", TrophyCrypto.HexToBytes("ffffffffffffffffffffffffffffffff"), id)),
+                  "A wrong trophy key fails the test");
+            Check(!TrophyCrypto.LooksLikeTrophyConf(TrophyCrypto.DecryptEntry(trp, entries, "TROPCONF.ESFM", key, "NPWR54321_00")), "A wrong npCommId fails the test");
+            string signed = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!--Sce-Np-Trophy-Signature: " + new string('A', 300) + "-->\n" +
+                            "<trophyconf version=\"1.1\" platform=\"ps4\"><npcommid>" + id + "</npcommid></trophyconf>";
+            byte[] signedTrp = SyntheticTrp(Tuple.Create("TROPCONF.ESFM", TrophyCrypto.EncryptEsfm(trpKey, iv, signed), 3u));
+            var signedEntries = TrophyCrypto.ParseTrp(signedTrp);
+            Check(TrophyCrypto.LooksLikeTrophyConf(TrophyCrypto.DecryptEntry(signedTrp, signedEntries, "TROPCONF.ESFM", key, id)),
+                  "TROPCONF with Sony's signature comment accepted (real GT7 layout)");
+            Check(TrophyCrypto.Describe(TrophyCrypto.DecryptEntry(signedTrp, signedEntries, "TROPCONF.ESFM", TrophyCrypto.HexToBytes("ffffffffffffffffffffffffffffffff"), id)) == "unreadable bytes",
+                  "A wrong key is reported as unreadable bytes");
+            var list = TrophyCrypto.ParseTrophies(TrophyCrypto.DecryptEntry(trp, entries, "TROP.ESFM", key, id));
+            Check(list.Count == 3 && list[0].Grade == 'P' && list[1].Hidden && list[1].Grade == 'G' && list[2].Name == "First" && list[2].Detail == "Bronze one",
+                  "TROP.ESFM trophies parsed");
+            var unlocks = TrophyCrypto.ParseUnlocks("<trophyconf><trophy id=\"000\" hidden=\"no\" ttype=\"P\" pid=\"-1\" unlockstate=\"false\" timestamp=\"0\">" +
+                                                    "<name>x</name></trophy><trophy id=\"002\" ttype=\"B\" unlockstate=\"true\" timestamp=\"1763150400\"></trophy></trophyconf>");
+            Check(unlocks.Count == 1 && unlocks.ContainsKey(2) && unlocks[2].HasValue &&
+                  unlocks[2].Value.ToUniversalTime() == new DateTime(2025, 11, 14, 20, 0, 0, DateTimeKind.Utc), "Unlock file read (Unix seconds)");
+            Check(TrophyCrypto.Timestamp("1763150400000").Value.ToUniversalTime() == new DateTime(2025, 11, 14, 20, 0, 0, DateTimeKind.Utc), "Unix milliseconds");
+            Check(TrophyCrypto.ValidKey("0123456789abcdefABCDEF0123456789") && !TrophyCrypto.ValidKey("0123") && !TrophyCrypto.ValidKey("0123456789abcdefABCDEF012345678g"),
+                  "Trophy key format");
+            Reject(() => TrophyCrypto.ParseTrp(new byte[TrophyCrypto.HeaderSize]), "A file without the TRP magic accepted");
+            byte[] cut = trp.Take(TrophyCrypto.HeaderSize + TrophyCrypto.EntrySize * 3 + 8).ToArray();
+            Reject(() => TrophyCrypto.ParseTrp(cut), "A TRP entry outside the file accepted");
+        }
         [STAThread]
         static int Main(string[] args)
         {
@@ -251,6 +340,8 @@ namespace RyGT
                 Check(detailBias == "1" && detailExtra == "0", "DLSS texture detail Reduced: the bias without its extra level");
                 LoaderForm.DlssDetailVariables("off", out detailBias, out detailExtra);
                 Check(detailBias == "0" && detailExtra == null, "DLSS texture detail Off: no bias");
+                TrophyChecks();
+                TrophyFileChecks(Path.Combine(root, "trophy-files"));
                 Console.WriteLine("PASS: " + checks + " GT7 setup checks");
                 return 0;
             }

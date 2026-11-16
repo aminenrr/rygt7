@@ -14,7 +14,7 @@ class AssemblyTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        for x in ('source/build-support', 'built', 'renderer', 'stubs', 'ucrt/bin', 'out', 'fidelityfx'):
+        for x in ('source/build-support', 'built', 'renderer', 'stubs', 'ucrt/bin', 'out', 'fidelityfx', 'dlss-sdk'):
             (self.root / x).mkdir(parents=True)
         self.names = list(module.RENDERER_LIBS) + list(module.STUB_LIBS) + list(module.GCC_DLLS) + list(module.REQUIRED_RUNTIME) + ['old.prx']
         (self.root/'source/build-support/runtime-files.txt').write_text('\n'.join(self.names))
@@ -29,12 +29,17 @@ class AssemblyTests(unittest.TestCase):
         for n in module.GCC_DLLS: (self.root/'ucrt/bin'/n).write_bytes(b'ucrt')
         for n in module.REQUIRED_RUNTIME: (self.root/'built'/n).write_bytes(b'fresh runtime')
         (self.root/'built/old.prx').write_bytes(b'fresh')
-        for n in ('launcher.exe','converter.exe','probe.exe'): (self.root/n).write_bytes(n.encode())
+        for n in ('launcher.exe','converter.exe','probe.exe','ryGT_dlss.dll'): (self.root/n).write_bytes(n.encode())
+        # FEAT-GTS-269: the DLSS plugin, and NVIDIA's licence checked against its pin.
+        (self.root/'dlss-sdk/LICENSE.txt').write_bytes(b'NVIDIA RTX SDKs LICENSE')
+        sdk = dict(module.DLSS_SDK, files=[{'path': 'LICENSE.txt', 'sha256': module.sha(self.root/'dlss-sdk/LICENSE.txt')}])
+        sdk_pin = patch.object(module, 'DLSS_SDK', sdk); sdk_pin.start(); self.addCleanup(sdk_pin.stop)
         self.args = SimpleNamespace(source=self.root/'source',fidelityfx=self.root/'fidelityfx',runtime=self.root/'assembled',
           built_libs=self.root/'built',renderer_build=self.root/'renderer',stubs=self.root/'stubs',ucrt=self.root/'ucrt',
           info=self.root/'BUILD_INFO.json',source_sha='a'*40,renderer_sha='b'*40,renderer_configured_url='configured',
           renderer_fetch_url='mirror', launcher=self.root/'launcher.exe',converter=self.root/'converter.exe',
-          wheel_probe=self.root/'probe.exe',renderer_source=self.root/'renderer',out=self.root/'out',name='RyGT7-ci-aaaaaaaa')
+          wheel_probe=self.root/'probe.exe',renderer_source=self.root/'renderer',out=self.root/'out',name='RyGT7-ci-aaaaaaaa',
+          dlss_plugin=self.root/'ryGT_dlss.dll',dlss_sdk=self.root/'dlss-sdk')
 
     def test_every_file_from_a_build_or_pin(self):
         module.assemble(self.args)
@@ -44,6 +49,9 @@ class AssemblyTests(unittest.TestCase):
         self.assertEqual(info['runtime_files']['libs/libSceMbus.prx']['origin'],'rygt7-gt7-stub-build')
         self.assertEqual(info['runtime_files']['libs/libstdc++-6.dll']['origin'],'ucrt64-toolchain')
         self.assertEqual(info['runtime_files']['amd_fidelityfx_vk.dll']['origin'],'amd-fidelityfx-sdk')
+        self.assertEqual(info['runtime_files']['dlss/ryGT_dlss.dll']['origin'],'rygt7-source-build')
+        self.assertEqual((self.args.runtime/'dlss/ryGT_dlss.dll').read_bytes(),b'ryGT_dlss.dll')
+        self.assertEqual(sorted(p.name for p in (self.args.runtime/'dlss').iterdir()),['ryGT_dlss.dll'])
         self.assertNotIn('base_url', info)
         self.assertEqual(info['components']['feel_test']['origin'], 'shadgt7-source-build')  # FEAT-GTS-265
         self.assertEqual({record['origin'] for record in info['runtime_files'].values()},

@@ -114,6 +114,16 @@ try {
     # Exercise the actual protobuf resource rule before the large renderer build.
     Invoke-Checked $nativeNinja @('-C',$rendererBuild,'externals/protobuf/CMakeFiles/libprotobuf.dir/version.rc.res')
     Invoke-Checked $nativeCmake @('--build',$rendererBuild,'--target','ryty_gpu','ryty_audio3d','ryty_ajm','ryty_ngs2','ryty_zlib','ryty_discmap','ryty_screenshot','ryty_np','ryty_feel_test','--parallel','4')
+    # FEAT-GTS-269: ryGT_dlss.dll, the DLSS plugin (plugins/dlss, MIT), built against NVIDIA's DLSS SDK headers
+    # and import library pinned in ci/rygt7/runtime-toolchain.json. Only the plugin is packaged
+    # (dlss\ryGT_dlss.dll); players get NVIDIA's runtime with the launcher's download button.
+    $dlssSdk = & $nativePython $toolchainScript dlss-sdk $ToolsRoot | Select-Object -Last 1
+    if ($LASTEXITCODE -ne 0 -or !$dlssSdk) { throw 'Pinned NVIDIA DLSS SDK unavailable' }
+    $env:DLSS_SDK = $dlssSdk
+    $env:VULKAN_INCLUDE = Join-Path $renderer 'externals\vulkan-headers\include'
+    $dlssPlugin = Join-Path $workspace 'dlss-plugin'
+    Invoke-CmdFile (Join-Path $source 'plugins\dlss\build.cmd') $dlssPlugin
+    if (!(Test-Path (Join-Path $dlssPlugin 'ryGT_dlss.dll'))) { throw 'DLSS plugin output missing' }
     # FEAT-GTS-253: no runtime archive; AMD's FidelityFX runtime is the only file not built here.
     $fidelityfx = & $nativePython $toolchainScript fidelityfx $ToolsRoot | Select-Object -Last 1
     if ($LASTEXITCODE -ne 0 -or !$fidelityfx) { throw 'Pinned AMD FidelityFX runtime unavailable' }
@@ -127,6 +137,6 @@ try {
         ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 $toolchainInfo
     $packageOut = Join-Path $workspace 'dist'; New-Item -ItemType Directory -Path $packageOut | Out-Null
     $name = "RyGT7-ci-$($SourceSha.Substring(0,8))"
-    Invoke-Checked $nativePython @((Join-Path $PSScriptRoot 'assemble.py'), '--source',$source,'--fidelityfx',$fidelityfx,'--runtime',(Join-Path $workspace 'assembled-runtime'), '--built-libs',(Join-Path $runtimeBuild 'core\libs\libs'), '--renderer-build',$rendererBuild,'--stubs',$stubDir,'--ucrt',$ucrt,'--info',(Join-Path $workspace 'BUILD_INFO.json'),'--launcher',(Join-Path $launcher 'RyGT7.exe'),'--converter',(Join-Path $runtimeBuild 'core\relinker\ryty.exe'),'--renderer-source',$renderer,'--wheel-probe',(Join-Path $runtimeBuild 'core\libs\prx\libScePad\ryty-wheel-probe.exe'),'--out',$packageOut,'--source-sha',$SourceSha,'--renderer-sha',$RendererSha,'--renderer-configured-url',$pin.repository,'--renderer-fetch-url',$mirror,'--toolchain-info',$toolchainInfo,'--name',$name)
+    Invoke-Checked $nativePython @((Join-Path $PSScriptRoot 'assemble.py'), '--source',$source,'--fidelityfx',$fidelityfx,'--runtime',(Join-Path $workspace 'assembled-runtime'), '--built-libs',(Join-Path $runtimeBuild 'core\libs\libs'), '--renderer-build',$rendererBuild,'--stubs',$stubDir,'--ucrt',$ucrt,'--info',(Join-Path $workspace 'BUILD_INFO.json'),'--launcher',(Join-Path $launcher 'RyGT7.exe'),'--converter',(Join-Path $runtimeBuild 'core\relinker\ryty.exe'),'--renderer-source',$renderer,'--wheel-probe',(Join-Path $runtimeBuild 'core\libs\prx\libScePad\ryty-wheel-probe.exe'),'--out',$packageOut,'--source-sha',$SourceSha,'--renderer-sha',$RendererSha,'--renderer-configured-url',$pin.repository,'--renderer-fetch-url',$mirror,'--toolchain-info',$toolchainInfo,'--dlss-plugin',(Join-Path $dlssPlugin 'ryGT_dlss.dll'),'--dlss-sdk',$dlssSdk,'--name',$name)
     Write-Output "GT7 package: $packageOut\$name.zip"
 } finally { $env:PATH=$oldPath; $env:LIB=$oldLib }

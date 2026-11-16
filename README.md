@@ -52,8 +52,8 @@ and the racing wheel, ultrawide and frame generation work described in the next 
 
 The launcher retains display, FSR, optional DLSS, input bindings, controller ports, wheel, shader
 compilation, and logging controls. GT Sport-specific script preparation and graphics patches are
-removed from its interface. DLSS's separate plugin and NVIDIA files are not bundled; see
-[the optional plugin instructions](plugins/dlss/README.md). AMD FSR is available in the supplied renderer.
+removed from its interface. The package ships the DLSS plugin (`dlss\ryGT_dlss.dll`, see
+[the plugin's notes](plugins/dlss/README.md)); NVIDIA's DLSS files come from the launcher's download button. AMD FSR is available in the supplied renderer.
 
 ## Online play
 
@@ -287,6 +287,21 @@ frame multiplier and fast flips are by dessierror (the wheel + ultrawide edition
 play (RyGTServer's GT7 service, PSN session signaling, the launcher's Online page). GPL version 2
 applies to this project; individual files and dependencies retain their stated licenses.
 [LICENSE](LICENSE) and the release's `licenses` folder contain notices.
+
+The DLSS plugin (`dlss\ryGT_dlss.dll`) is licensed differently from the rest:
+
+| Part | Whose | Licence |
+|---|---|---|
+| The plugin's source ([plugins/dlss](plugins/dlss)) | RyGT-Team | MIT ([plugins/dlss/LICENSE](plugins/dlss/LICENSE), shipped as `licenses\ryGT_dlss\LICENSE`) |
+| NVIDIA's NGX loader (`nvsdk_ngx_d.lib`, DLSS SDK v310.9.16), linked into `ryGT_dlss.dll` as object code | NVIDIA | [NVIDIA RTX SDKs License](https://github.com/NVIDIA/DLSS/blob/v310.9.16/LICENSE.txt), shipped as `licenses\NVIDIA-DLSS-SDK\LICENSE.txt` |
+
+NVIDIA's part is not under the MIT licence or the GPL: it may be distributed only as object code
+inside an application, not on its own, and not reverse engineered. Its licence forbids putting it
+under an open-source licence, which is why it is linked only into the MIT plugin and never into the
+GPL renderer or runtime (the renderer loads the plugin at run time through `rygt_dlss_api.h`).
+NVIDIA's runtime DLLs are not shipped: the launcher downloads them from NVIDIA under NVIDIA's terms.
+This software uses NVIDIA DLSS. NVIDIA, the NVIDIA logo and DLSS are trademarks and/or registered trademarks of NVIDIA Corporation in the U.S. and other countries.
+
 - @dessierror for the artwork used in README.md
 
 Gran Turismo is a trademark of Sony Interactive Entertainment. This project is independent of Sony

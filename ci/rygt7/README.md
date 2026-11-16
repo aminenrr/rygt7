@@ -47,7 +47,11 @@ source-built; GCC redistribution files come from the same UCRT64 toolchain. AMD'
 signed FidelityFX runtime (`amd_fidelityfx_vk.dll` and its license) is the one file
 not built here: `python ci/rygt7/runtime_toolchain.py fidelityfx <folder>` downloads it
 from the FidelityFX SDK release pinned in `ci/rygt7/runtime-toolchain.json` and checks
-both SHA-256s. That toolchain is pinned: MSYS2 UCRT64 GCC
+both SHA-256s. The DLSS plugin (`dlss\ryGT_dlss.dll`, FEAT-GTS-269) is built here from `plugins/dlss`
+against NVIDIA DLSS SDK v310.9.16's headers and `nvsdk_ngx_d.lib`, which
+`python ci/rygt7/runtime_toolchain.py dlss-sdk <folder>` downloads and checks (`dlss_sdk` pins).
+The package holds only the plugin in `dlss\`, with its MIT licence and NVIDIA's licence under
+`licenses\`; the validator rejects anything else in `dlss\`. That toolchain is pinned: MSYS2 UCRT64 GCC
 16.2.0-6 and the packages it needs, plus the FFmpeg prebuilt, each by file name and
 SHA-256 in `ci/rygt7/runtime-toolchain.json` (the same pins as RyGTS).
 `ci/rygt7/runtime_toolchain.py` downloads, checks and unpacks them; MSYS2 itself only

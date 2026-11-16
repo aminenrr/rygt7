@@ -34,7 +34,7 @@ class PackageIntegration(unittest.TestCase):
         validator.RENDERER=subprocess.check_output(['git','-C',str(renderer_source),'rev-parse','HEAD'],text=True).strip()
         with tempfile.TemporaryDirectory(prefix='gt7-ci-package-test-') as tmp:
             root=Path(tmp)
-            for n in ('built','renderer/externals/fixture','stubs','ucrt/bin','deps/fixture','out','fidelityfx'):
+            for n in ('built','renderer/externals/fixture','stubs','ucrt/bin','deps/fixture','out','fidelityfx','dlss-sdk'):
                 (root/n).mkdir(parents=True)
             (root/'renderer/LICENSE').write_text('renderer license')
             (root/'renderer/externals/fixture/LICENSE').write_text('dependency license')
@@ -56,13 +56,16 @@ class PackageIntegration(unittest.TestCase):
             (root/'renderer'/assembler.FEEL_TEST).write_bytes(b'feel test fixture')  # FEAT-GTS-265
             for n in assembler.STUB_LIBS:(root/'stubs'/n).write_bytes(b'stub fixture')
             for n in assembler.GCC_DLLS:(root/'ucrt/bin'/n).write_bytes(b'ucrt fixture')
-            for n in ('launcher.exe','converter.exe','probe.exe'):(root/n).write_bytes(b'fixture')
+            for n in ('launcher.exe','converter.exe','probe.exe','ryGT_dlss.dll'):(root/n).write_bytes(b'fixture')
+            (root/'dlss-sdk/LICENSE.txt').write_bytes(b'NVIDIA RTX SDKs LICENSE fixture')  # FEAT-GTS-269
+            sdk=mock.patch.object(assembler,'DLSS_SDK',dict(assembler.DLSS_SDK,files=[{'path':'LICENSE.txt','sha256':assembler.sha(root/'dlss-sdk/LICENSE.txt')}]))
+            sdk.start();self.addCleanup(sdk.stop)
             args=SimpleNamespace(source=source,fidelityfx=root/'fidelityfx',runtime=root/'assembled',built_libs=root/'built',
               renderer_build=root/'renderer',stubs=root/'stubs',ucrt=root/'ucrt',info=root/'BUILD_INFO.json',
               source_sha=commit,renderer_sha=validator.RENDERER,renderer_configured_url=validator.CONFIGURED,
               renderer_fetch_url=validator.FETCHED,launcher=root/'launcher.exe',converter=root/'converter.exe',
               wheel_probe=root/'probe.exe',renderer_source=renderer_source,renderer_deps_source=root/'renderer/externals',deps_source=root/'deps',out=root/'out',
-              name='RyGT7-ci-'+commit[:8])
+              name='RyGT7-ci-'+commit[:8],dlss_plugin=root/'ryGT_dlss.dll',dlss_sdk=root/'dlss-sdk')
             assembler.assemble(args)
             info=json.loads(args.info.read_text());info['renderer_vma_patch']=assembler.verify_renderer(renderer_source)
             args.info.write_text(json.dumps(info),encoding='utf-8')
@@ -72,6 +75,8 @@ class PackageIntegration(unittest.TestCase):
                 self.assertIn(args.name+'/licenses/RyGT7/3rdparty/fixture/LICENSES/nested/NOTICE.txt',z.namelist())
                 self.assertIn(args.name+'/licenses/shadGT7/externals/fixture/LICENSES/nested/NOTICE.txt',z.namelist())
                 self.assertIn(args.name+'/tools/ryty-feel-test.exe',z.namelist())  # FEAT-GTS-265
+                self.assertEqual([n for n in z.namelist() if '/dlss/' in n],[args.name+'/dlss/ryGT_dlss.dll'])
+                for n in ('licenses/ryGT_dlss/LICENSE','licenses/NVIDIA-DLSS-SDK/LICENSE.txt'):self.assertIn(args.name+'/'+n,z.namelist())
 
 def restore_env(original):
     for name,val in original.items():

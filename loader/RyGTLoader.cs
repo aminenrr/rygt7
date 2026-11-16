@@ -1720,7 +1720,7 @@ namespace RyGT
             var sideVersion = new Label { Text = "ryGT7 for Windows", AutoSize = true, ForeColor = Color.FromArgb(96, 102, 114), Tag = "heading" };
             sidebar.Controls.Add(sideVersion);
             sidebar.Layout += delegate { sideVersion.Location = new Point(28, sidebar.ClientSize.Height - sideVersion.Height - 24); };
-            var pageNames = new[] { "Game", "Display", "Graphics", "Shaders", "Controls", "Account", "Online", "About", "Advanced" };
+            var pageNames = new[] { "Game", "Display", "Graphics", "Shaders", "Controls", "Account", "Trophies", "Online", "About", "Advanced" };
             for (int i = 0; i < pageNames.Length; ++i)
             {
                 string page = pageNames[i];
@@ -2474,6 +2474,8 @@ namespace RyGT
             BuildOnlinePage();
             // ---- Account: the online account (Online.cs); nothing asks for one at start
             BuildAccountPage();
+            // ---- Trophies: the trophy key, the list and the pop-ups (Trophies.cs, FEAT-GT7-187)
+            BuildTrophiesPage();
 
             var aboutPage = NewPage("About", "About", "ryGT7 for Windows " + (char)183 + " Gran Turismo 7 (CUSA24769)");
             aboutPage.Controls.Add(new Label
@@ -2481,7 +2483,9 @@ namespace RyGT
                 AutoSize = true, MaximumSize = new Size(860, 0), ForeColor = Dark.DimText, Tag = "heading", Margin = new Padding(1, 0, 0, 6),
                 Text = "ryGT7 converts your own copy of Gran Turismo 7 to run on Windows. " +
                        "It is a fan project, not affiliated with Sony Interactive Entertainment or Polyphony Digital; " +
-                       "Gran Turismo is their trademark. You need your own copy of the game."
+                       "Gran Turismo is their trademark. You need your own copy of the game." + Environment.NewLine +
+                       // FEAT-GTS-269: the attribution the NVIDIA RTX SDKs License asks for (the DLSS plugin).
+                       "This software uses NVIDIA DLSS. NVIDIA, the NVIDIA logo and DLSS are trademarks and/or registered trademarks of NVIDIA Corporation in the U.S. and other countries."
             });
             var folders = Section(aboutPage, "Folders");
             folders.Controls.Add(OpenRow("The ryGT7 folder", OpenFolder, "Open folder"));
@@ -4146,6 +4150,10 @@ namespace RyGT
             try { if (!GameExe.IsPrepared(exe)) GameExe.Prepare(exe); } catch { }
             ThreadPool.QueueUserWorkItem(delegate
             {
+                // FEAT-GT7-187: the trophy key file of this session, deleted when GT7 exits.
+                string trophyKeyFile = null;
+                try
+                {
                 bool recoveredOnce = false;
                 while (true)
                 {
@@ -4237,6 +4245,9 @@ namespace RyGT
                             if (proOptionsOn.Count != 0) start.EnvironmentVariables["RYGT_NEO_EXTRAS"] = string.Join(",", proOptionsOn);
                             else start.EnvironmentVariables.Remove("RYGT_NEO_EXTRAS");
                         }
+                        // FEAT-GT7-187: the trophy key (a temp file only this user reads) and the pop-up switch.
+                        TrophyStore.DeleteKeyFile(root, trophyKeyFile);
+                        trophyKeyFile = TrophyStore.ApplyEnvironment(root, start);
                         // FEAT-GTS-254: the Advanced page's switches and other variables last, so they win.
                         int customCount = CustomEnvironment.Apply(start, new Settings(Path.Combine(root, "RyGT7.ini")).Env);
                         if (customCount > 0) AppendSetupLog(root, customCount + " custom environment variable(s) applied.");
@@ -4260,6 +4271,8 @@ namespace RyGT
                     }
                     AppendSetupLog(root, "The graphics device is responding again. Restarting GT7 once; the interrupted session cannot be resumed.");
                 }
+                }
+                finally { TrophyStore.DeleteKeyFile(root, trophyKeyFile); }
             });
         }
 

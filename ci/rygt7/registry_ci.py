@@ -26,7 +26,9 @@ CONFIGURED = 'https://github.com/' + RENDERER_REPO + '.git'
 FETCHED = 'https://github.com/' + RENDERER_REPO + '.git'
 SHA = re.compile(r'^[0-9a-f]{40}$')
 DIGEST = re.compile(r'^[0-9a-f]{64}$')
-REQUIRED = {'RyGT7.exe', 'converter/ryty.exe', 'libs/libSceVideoOut.prx', 'libs/libSceFiber.prx', 'BUILD_INFO.json'}
+REQUIRED = {'RyGT7.exe', 'converter/ryty.exe', 'libs/libSceVideoOut.prx', 'libs/libSceFiber.prx', 'BUILD_INFO.json',
+            # FEAT-GTS-269: the DLSS plugin and both its licences.
+            'dlss/ryGT_dlss.dll', 'licenses/ryGT_dlss/LICENSE', 'licenses/NVIDIA-DLSS-SDK/LICENSE.txt'}
 BAD = {'game', 'games', 'firmware', 'saves', 'save', 'savedata', 'shader-cache', 'shadercache', 'cache', 'caches', 'sce_sys', 'system_modules', 'fonts', 'app0', 'convert', 'sys', '_sd', 'user', 'shaders', 'logs', 'sce_module', 'eboot.bin'}
 
 def fail():
@@ -78,7 +80,7 @@ def validate(folder, commit):
                 any(p.casefold() in BAD for p in parts[1:]) or stat.S_ISLNK(info.external_attr >> 16)):
                 fail()
             relative = parts[1:]
-            roots = {'libs', 'converter', 'tools', 'patches', 'launcher', 'docs', 'licenses'}
+            roots = {'libs', 'converter', 'tools', 'patches', 'launcher', 'docs', 'licenses', 'dlss'}
             root_files = {'rygt7.exe', 'build_info.json', 'manifest.json', 'readme.txt', 'license', 'amd_fidelityfx_vk.dll', 'amd_fidelityfx_vk-license.txt', 'libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll'}
             if (len(relative) == 1 and relative[0].casefold() not in root_files) or (len(relative) > 1 and relative[0].casefold() not in roots): fail()
             key = path.casefold()
@@ -89,6 +91,7 @@ def validate(folder, commit):
             if info.file_size > 2 * 1024**3 or total > 8 * 1024**3 or len(folded) > 20000: fail()
             entries['/'.join(parts[1:])] = info
         if not REQUIRED.issubset(entries) or 'manifest.json' not in entries: fail()
+        if {p for p in entries if p.startswith('dlss/')} != {'dlss/ryGT_dlss.dll'}: fail()  # NVIDIA's runtime is never packaged
         manifest = json.loads(z.read(entries['manifest.json']))
         records = manifest.get('files')
         if not isinstance(records, list): fail()
@@ -116,7 +119,7 @@ def validate(folder, commit):
         if build.get('renderer_vma_patch') != {'path': 'externals/vma-patches/0001-trim-empty-default-blocks.patch', 'sha256': '989c12d4729935f11c05a13eeab0fc96fc99e53055c97bd0b81bce04448d6180', 'target': 'include/vk_mem_alloc.h', 'verified': True}: fail()
         runtime = build.get('runtime_files')
         if not isinstance(runtime, dict) or not runtime: fail()
-        runtime_paths = {p for p in entries if p.startswith('libs/') or p in {'amd_fidelityfx_vk.dll', 'amd_fidelityfx_vk-LICENSE.txt', 'libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll'}}
+        runtime_paths = {p for p in entries if p.startswith(('libs/', 'dlss/')) or p in {'amd_fidelityfx_vk.dll', 'amd_fidelityfx_vk-LICENSE.txt', 'libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll'}}
         if set(runtime) != runtime_paths: fail()
         origins = {'rygt7-source-build', 'shadgt7-source-build', 'rygt7-gt7-stub-build', 'ucrt64-toolchain', 'amd-fidelityfx-sdk'}
         for path, record in runtime.items():
@@ -124,6 +127,7 @@ def validate(folder, commit):
         for path in ('libs/libc.prx', 'libs/libkernel.prx', 'libs/libSceFiber.prx', 'libs/libScePad.prx'):
             if runtime.get(path, {}).get('origin') != 'rygt7-source-build': fail()
         if runtime.get('libs/libSceVideoOut.prx', {}).get('origin') != 'shadgt7-source-build': fail()
+        if runtime.get('dlss/ryGT_dlss.dll', {}).get('origin') != 'rygt7-source-build': fail()
         for path in ('amd_fidelityfx_vk.dll', 'amd_fidelityfx_vk-LICENSE.txt'):
             if runtime.get(path, {}).get('origin') != 'amd-fidelityfx-sdk': fail()
     print('GT7 artifact validated')
