@@ -65,27 +65,71 @@ and the HD UI toggle. New options are off by default; turn them on in the launch
 - rygt7 pr-tests now also has upstream main up to #57 (FEAT-GTS-269, DLSS plugin package) and #58 (trophies page, launcher 0.1.7), merged via #58. Conflicts resolved by union with #49 (feel test + DLSS plugin both packaged; FeelForm.cs + Trophies.cs both built; CHANGELOG keeps 0.1.7, then both 0.1.6 notes).
 - shadgt7 pr-tests: + upstream main (#50 replay crash, #53) + #54 (trophies) + d0d01781 (single DLSS frames beside temporal ones on Streamline viewport 2, RYGT_DLSS_SIDE_VIEWPORT=0 off; HDUI-SINGLE log; RYGT_HD_UI_3D_MENU_SAFE and RYGT_HD_UI_SCENE_DEPTH now off unless =1).
 
-## 2026-11-16: temporal DLSS + HD UI in 3D menus (current work)
-- Bug: with HD UI and temporal DLSS both on, the 3D shakes in menus (cafe book videos, garage
-  Scapes, used car purchase, post-race rewards). Races are fine, and it's fine with HD UI off or
-  `RYGT_DLSS_TEMPORAL=0`. Cause: the HD UI proxy scaled the un-resolved, jittered colour as a
-  single DLSS frame (it got temporal inputs only in non-mirror race frames, `PrepareUiTarget`).
-- shadgt7 `57200074` (stopgap, the default): with HD UI on and no race HUD in the last 2
-  frames, `NoteTemporalDraw` keeps the game's resolved picture (classic single DLSS + HD UI).
-  `RYGT_HD_UI_MENU_TEMPORAL=1` restores temporal there. Log tag `HDUI-MENU`.
-- shadgt7 `dcfd4f5b` (on top, `RYGT_HD_UI_MENU_TDLSS=1`, off by default): menus take the
-  temporal pass again, and the HD UI proxy gets the frame's depth, motion vectors and jitter:
-  - through (non-mirror) frame: the display's un-resolved colour;
-  - mirror frame: `temporal.raw_display`, the tone-mapped un-resolved scene drawn beside.
-  If the inputs don't fit, an `HDUI-SRC` line logs why, and menus fall back to the 57200074 path
-  for 60 frames (`temporal.hd_menu_hold_until`). A frame whose display already holds the
-  un-resolved colour gives the proxy up for that frame, so the presenter's temporal DLSS takes the
-  whole display, as with HD UI off. `HDUI-SRC` also logs the proxy's source, flags and sizes every
-  600 frames. Races and flat menus (no temporal pass) are unchanged.
+## Temporal DLSS + HD UI in 3D menus (solved 2026-11-16)
+- Bug: with HD UI and temporal DLSS both on, the 3D shook / edges shimmered in menus (cafe book
+  videos, garage Scapes, used car purchase, post-race rewards, world map licence icon). Races were
+  fine, and so was HD UI off.
+- Causes found, in order:
+  1. DLSS alternated temporal / single every frame on one Streamline history (4,653 switches).
+     Fixed in `d0d01781`: single calls go to Streamline viewport 2 (`RYGT_DLSS_SIDE_VIEWPORT`, on;
+     =0 off). Licence icon fixed.
+  2. The HD UI proxy scaled the un-resolved, jittered colour as a single DLSS frame. `57200074`
+     (stopgap): outside races keep the game's resolved picture (`HDUI-MENU` log;
+     `RYGT_HD_UI_MENU_TEMPORAL=1` restores temporal). `dcfd4f5b`: `RYGT_HD_UI_MENU_TDLSS` gives
+     the proxy the frame's depth, motion and jitter in menus (`HDUI-SRC` log, 60-frame fallback).
+  3. Late scene: in some menus something (e.g. a subtitle) draws into the display before GT7's
+     AA pass, so the proxy scales early and the scene composite (ps 0xdf75f23b) lands in it with
+     no DLSS. `6cba106d`: the proxy is copied back down, the composite drawn natively, and the
+     proxy scales at the next display draw with temporal inputs (`HDUI-SRC ... late scene`).
+     `RYGT_HD_UI_LATE_SCENE=1` alone = late scene + stopgap; on with MENU_TDLSS anyway.
+     `RYGT_HD_UI_MENU_TDLSS=2` also gives the proxy up on display-size depth draws after the
+     composite.
+- Owner test 2026-11-16 (CI 43963104510): shimmer gone everywhere with both LATE_SCENE=1 and
+  MENU_TDLSS=1; MENU_TDLSS sharper and steadier (cafe, garage).
+- `f70fee41`: **`RYGT_HD_UI_MENU_TDLSS` is on by default** (=0 off, owner's decision). HD UI +
+  DLSS in the launcher is all that's needed. CI 43980072900 (2026-11-16 23:34 GMT).
+- Ruled out: texture mip bias (`RYGT_DLSS_TEMPORAL_MIP_BIAS=0`, no change).
 - Dead ends (kept, off unless =1): `RYGT_HD_UI_3D_MENU_SAFE`, `RYGT_HD_UI_SCENE_DEPTH`.
-- CI: run 43867936183 (dispatched 2026-11-16 12:35 GMT). Not compiled locally.
-- Next: the owner tests with `RYGT_HD_UI_MENU_TDLSS=1` (cafe book video, garage Scapes, used car
-  purchase, race rewards, world map licence icon, one full race, one flat menu) and sends the log
-  (`HDUI-SRC`, `HDUI-MENU`, `HDUI-SINGLE`, `DLSS-GT7-001`). If it holds, consider making it the
-  default; if not, the fallback reasons say where.
-- Untouched: the precompile port, trophies upstream PRs (RyGT-Team/shadgt7#54, rygt7#58, open).
+- Untested leftovers: `7c8e9ced` temporal retry after a VRAM refusal, Option A `4960ed4a`. The
+  race-HUD detector (`hd_race_frame`) flickers in menus; a hold was planned, not built.
+
+## Other fixes on shadgt7 pr-tests
+- `c5569738` FIX-GT7-187 (from RyGT-Team/shadGT `a3a071d6`, in shadGT #50): a partial fill of a
+  3D picture copied the whole depth and read past the 1 MB pattern buffer: device lost on the
+  title screen / in races while many pipelines build. Conflict with FIX-GT7-031 resolved by hand:
+  `ApplyRewrite` keeps FIX-GT7-031's whole-layer count, and for a 3D picture filled to full height
+  it becomes the whole slices covered. The same bug is in shadgt7 main.
+
+## Shader precompile / pipeline prewarm (planned)
+- No Polyphony keys or decrypting game files (RyGTS removed that, FIX-GTS-293/294). GTToolsSharp
+  5.3.5 can't open the owner's GT7 1.71 anyway ("Failed to decrypt volume"); dead end.
+- What exists now: the shader store (PERF-032, kept between runs), the driver cache
+  (`<serial>.vkpipelinecache`), and the manifest pretranslate (`RYGT_MANIFEST_RECORD` /
+  `RYGT_MANIFEST_PRETRANSLATE`, `PERF-GT7-117`), which rebuilds translations at boot. Owner test
+  2026-11-16: 25,226 translations in 52 s; worst catch-up 52.6 s down to 8.8 s.
+- What's left: VkPipelines (shaders + state: vertex/colour formats, blend...) are still built
+  mid-race while draws are skipped (`DIAG-GT7-012`); new cars pop for a moment.
+- The precompile was removed in shadgt7 `da66c3a8e3` (2026-10-09, Lance's request): PipelineKey
+  recording, `WarmUp`, `LoadGraphicsPipeline` / `LoadComputePipeline` / `LoadPipelineStage`,
+  `PreloadQueue`, PERF-024 background build. The serialization helpers were kept.
+- Plan: re-port it, adapted to today's code (per-thread `S()` state, async build workers,
+  permutation listings): record each new pipeline's key and sdata to the store; at the title,
+  load them and build them on low priority in the background, paused in races; one log line
+  (built / skipped / failed / time). New switch, off by default. Test: race the same cars twice.
+  Watch for stale entries and VRAM. Never-loaded content still compiles the first time.
+- The full shadGT #40/#42/#44 precompile port was handed to the other fork agent on 2026-11-14.
+
+## Fix log (keep this up to date)
+Every new commit on either `pr-tests` branch gets a line here: date, repo, commit, fix or switch,
+default, CI run, test result.
+| Date | Repo | Commit | What | Default | CI | Tested |
+|---|---|---|---|---|---|---|
+| 2026-11-16 | shadgt7 | d0d01781 | single DLSS on side viewport (`RYGT_DLSS_SIDE_VIEWPORT`) | on | 43778170083 | licence icon fixed |
+| 2026-11-16 | shadgt7 | 57200074 | HD UI menus keep resolved picture (stopgap) | on (superseded) | 43860628121 | still shimmer |
+| 2026-11-16 | shadgt7 | dcfd4f5b | `RYGT_HD_UI_MENU_TDLSS` temporal inputs for the proxy | off then | 43867936183 | no change alone |
+| 2026-11-16 | shadgt7 | 6cba106d | late-scene restart (`RYGT_HD_UI_LATE_SCENE`), MENU_TDLSS=2, trace fixes | off then | 43963104510 | shimmer gone |
+| 2026-11-16 | shadgt7 | c5569738 | FIX-GT7-187 3D partial fill device loss | always | 43980072900 | pending |
+| 2026-11-16 | shadgt7 | f70fee41 | MENU_TDLSS on by default | on | 43980072900 | pending |
+| planned | shadgt7 | - | pipeline record + title prewarm | off | - | - |
+
+- Untouched: trophies upstream PRs (RyGT-Team/shadgt7#54, rygt7#58, open).
