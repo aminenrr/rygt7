@@ -58,3 +58,7 @@ and the HD UI toggle. New options are off by default; turn them on in the launch
    `pr-tests: merge RyGT-Team/<repo>#<N> (...)`. Note any conflict resolution in the commit.
 3. Re-apply the CI commit (branch name `pr-tests`), update the table above, push shadgt7 first,
    then rygt7 (the push starts CI).
+
+## 2026-11-16 update
+- rygt7 pr-tests now also has upstream main up to #57 (FEAT-GTS-269, DLSS plugin package) and #58 (trophies page, launcher 0.1.7), merged via #58. Conflicts resolved by union with #49 (feel test + DLSS plugin both packaged; FeelForm.cs + Trophies.cs both built; CHANGELOG keeps 0.1.7, then both 0.1.6 notes).
+- shadgt7 pr-tests: + upstream main (#50 replay crash, #53) + #54 (trophies) + d0d01781 (single DLSS frames beside temporal ones on Streamline viewport 2, RYGT_DLSS_SIDE_VIEWPORT=0 off; HDUI-SINGLE log; RYGT_HD_UI_3D_MENU_SAFE and RYGT_HD_UI_SCENE_DEPTH now off unless =1).
