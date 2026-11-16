@@ -15,7 +15,9 @@ Context for any agent (human or AI) working on this branch. Written 2026-11-14.
 - Base: **upstream** `RyGT-Team/rygt7` `main` (not the fork's `main`, which lags behind).
 - Renderer: `aminenrr/shadgt7` branch `pr-tests` = upstream `RyGT-Team/shadgt7` `main` + the
   renderer PRs below. Same rules there: test-only, other branches untouched.
-- CI: `.github/workflows/rygt7-ci.yml` runs on every push to `pr-tests` (or by hand, Run workflow).
+- CI: `.github/workflows/rygt7-ci.yml`. Always start it by hand (workflow_dispatch, ref `pr-tests`):
+  push-triggered runs fail at "Resolve exact RyGT7 main revision". If that step fails with an
+  HTTP 403 rate limit, re-run the failed jobs. Doc-only pushes use `[skip ci]`.
   It builds this fork's source with the head of `aminenrr/shadgt7` `pr-tests`
   (`FORK_*` env; `build-support/renderer.json` pins the same). A full run takes ~75 min; the
   installer is the run's artifact. Same CI change as `ui-hires-precompile` (commit dfe0249).
@@ -62,3 +64,28 @@ and the HD UI toggle. New options are off by default; turn them on in the launch
 ## 2026-11-16 update
 - rygt7 pr-tests now also has upstream main up to #57 (FEAT-GTS-269, DLSS plugin package) and #58 (trophies page, launcher 0.1.7), merged via #58. Conflicts resolved by union with #49 (feel test + DLSS plugin both packaged; FeelForm.cs + Trophies.cs both built; CHANGELOG keeps 0.1.7, then both 0.1.6 notes).
 - shadgt7 pr-tests: + upstream main (#50 replay crash, #53) + #54 (trophies) + d0d01781 (single DLSS frames beside temporal ones on Streamline viewport 2, RYGT_DLSS_SIDE_VIEWPORT=0 off; HDUI-SINGLE log; RYGT_HD_UI_3D_MENU_SAFE and RYGT_HD_UI_SCENE_DEPTH now off unless =1).
+
+## 2026-11-16: temporal DLSS + HD UI in 3D menus (current work)
+- Bug: with HD UI and temporal DLSS both on, the 3D shakes in menus (cafe book videos, garage
+  Scapes, used car purchase, post-race rewards). Races are fine, and it's fine with HD UI off or
+  `RYGT_DLSS_TEMPORAL=0`. Cause: the HD UI proxy scaled the un-resolved, jittered colour as a
+  single DLSS frame (it got temporal inputs only in non-mirror race frames, `PrepareUiTarget`).
+- shadgt7 `57200074` (stopgap, the default): with HD UI on and no race HUD in the last 2
+  frames, `NoteTemporalDraw` keeps the game's resolved picture (classic single DLSS + HD UI).
+  `RYGT_HD_UI_MENU_TEMPORAL=1` restores temporal there. Log tag `HDUI-MENU`.
+- shadgt7 `dcfd4f5b` (on top, `RYGT_HD_UI_MENU_TDLSS=1`, off by default): menus take the
+  temporal pass again, and the HD UI proxy gets the frame's depth, motion vectors and jitter:
+  - through (non-mirror) frame: the display's un-resolved colour;
+  - mirror frame: `temporal.raw_display`, the tone-mapped un-resolved scene drawn beside.
+  If the inputs don't fit, an `HDUI-SRC` line logs why, and menus fall back to the 57200074 path
+  for 60 frames (`temporal.hd_menu_hold_until`). A frame whose display already holds the
+  un-resolved colour gives the proxy up for that frame, so the presenter's temporal DLSS takes the
+  whole display, as with HD UI off. `HDUI-SRC` also logs the proxy's source, flags and sizes every
+  600 frames. Races and flat menus (no temporal pass) are unchanged.
+- Dead ends (kept, off unless =1): `RYGT_HD_UI_3D_MENU_SAFE`, `RYGT_HD_UI_SCENE_DEPTH`.
+- CI: run 43867936183 (dispatched 2026-11-16 12:35 GMT). Not compiled locally.
+- Next: the owner tests with `RYGT_HD_UI_MENU_TDLSS=1` (cafe book video, garage Scapes, used car
+  purchase, race rewards, world map licence icon, one full race, one flat menu) and sends the log
+  (`HDUI-SRC`, `HDUI-MENU`, `HDUI-SINGLE`, `DLSS-GT7-001`). If it holds, consider making it the
+  default; if not, the fallback reasons say where.
+- Untouched: the precompile port, trophies upstream PRs (RyGT-Team/shadgt7#54, rygt7#58, open).
