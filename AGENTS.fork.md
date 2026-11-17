@@ -160,6 +160,11 @@ and the HD UI toggle. New options are off by default; turn them on in the launch
   match again. Log: `PRT-KEEP: N at their old index` in the pretranslate line; `PRT-KEEP: a new
   pipeline has a recorded one's stages but another key (differing: [a..b) ...)` for the first 20
   near-misses (owner run 2: 305), then every 100. Next: read those byte ranges and fix the key.
+- **FIX-PRT-DLSS (`c6066056`):** owner log 2026-11-17: at 19:28 Streamline "Exceeded VRAM budget",
+  DLSS result 39; `proxy.dlss_failed` (vk_ui_hires.h) and `Pass::failed` (ryty_dlss.cpp) were
+  permanent, so HD UI DLSS and DLSS stayed off for the rest of the run. Now `dlss_retry_in` /
+  `retry_in` = 120 frames, then DLSS again. Temporal refusals pause 600 calls (3600 from the 8th),
+  never for the run.
 - **Splash bar fix (`50721c9b`):** work that starts or ends before the splash shows is noted; the
   bar shows from the splash's first frame, "Shaders ready  N pipelines" held 2 s then fades.
 - Dropped by owner 2026-11-17: compile-width ceiling #45, shared manifest / splash precompile
@@ -180,6 +185,7 @@ default, CI run, test result.
 | 2026-11-17 | rygt7 | a604a0a | merge upstream main FIX-GTS-270/271 (launcher 0.1.7, key removal) | - | pending | pending |
 | 2026-11-17 | shadgt7 | d3f0f826 | FIX-GT7-GHOST ghost car tyres (port of RyGT-Team/shadgt7#43, 7b170cbd) | always | pending | pending |
 | 2026-11-17 | shadgt7 | 50721c9b | PRT-KEEP shaders kept across builds; prewarm, splash progress, manifest record + pretranslate on by default; splash bar arms early, 2 s hold; near-miss key diagnostic | on (=0 off) | pending | pending |
+| 2026-11-17 | shadgt7 | c6066056 | FIX-PRT-DLSS: DLSS / HD UI DLSS never off for the run after a failure (VRAM-budget drop at 19:28 in owner log): ~120-frame pause then retry; temporal never refused for good | always | pending | pending |
 | 2026-11-17 | rygt7 | ecb2ec8 | launcher: shader rebuild + Show Splash checkboxes on by default; unchecked rebuild sends =0 | on | pending | pending |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
 
