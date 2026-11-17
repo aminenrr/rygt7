@@ -182,11 +182,11 @@ default, CI run, test result.
 | 2026-11-16 | shadgt7 | c5569738 | FIX-GT7-187 3D partial fill device loss | always | 43980072900 green | owner test pending |
 | 2026-11-16 | shadgt7 | f70fee41 | MENU_TDLSS on by default | on | 43980072900 green | owner test pending |
 | 2026-11-17 | shadgt7 | d0235932 | PRT-PREWARM pipeline record + start prewarm (`RYGT_PIPELINE_PREWARM`), PRT-SPLASH splash progress (`RYGT_SPLASH_SHADER_PROGRESS`) | off then | 43985665386 green | prewarm works (5573 in 1.5 s); bar not shown; 305 near-miss keys |
-| 2026-11-17 | rygt7 | a604a0a | merge upstream main FIX-GTS-270/271 (launcher 0.1.7, key removal) | - | pending | pending |
-| 2026-11-17 | shadgt7 | d3f0f826 | FIX-GT7-GHOST ghost car tyres (port of RyGT-Team/shadgt7#43, 7b170cbd) | always | pending | pending |
-| 2026-11-17 | shadgt7 | 50721c9b | PRT-KEEP shaders kept across builds; prewarm, splash progress, manifest record + pretranslate on by default; splash bar arms early, 2 s hold; near-miss key diagnostic | on (=0 off) | pending | pending |
-| 2026-11-17 | shadgt7 | c6066056 | FIX-PRT-DLSS: DLSS / HD UI DLSS never off for the run after a failure (VRAM-budget drop at 19:28 in owner log): ~120-frame pause then retry; temporal never refused for good | always | pending | pending |
-| 2026-11-17 | rygt7 | ecb2ec8 | launcher: shader rebuild + Show Splash checkboxes on by default; unchecked rebuild sends =0 | on | pending | pending |
+| 2026-11-17 | rygt7 | a604a0a | merge upstream main FIX-GTS-270/271 (launcher 0.1.7, key removal) | - | 44163135699 green | pending |
+| 2026-11-17 | shadgt7 | d3f0f826 | FIX-GT7-GHOST ghost car tyres (port of RyGT-Team/shadgt7#43, 7b170cbd) | always | 44163135699 green | pending |
+| 2026-11-17 | shadgt7 | 50721c9b | PRT-KEEP shaders kept across builds; prewarm, splash progress, manifest record + pretranslate on by default; splash bar arms early, 2 s hold; near-miss key diagnostic | on (=0 off) | 44163135699 green | pending |
+| 2026-11-17 | shadgt7 | c6066056 | FIX-PRT-DLSS: DLSS / HD UI DLSS never off for the run after a failure (VRAM-budget drop at 19:28 in owner log): ~120-frame pause then retry; temporal never refused for good | always | 44163135699 green | pending |
+| 2026-11-17 | rygt7 | ecb2ec8 | launcher: shader rebuild + Show Splash checkboxes on by default; unchecked rebuild sends =0 | on | 44163135699 green | pending |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
 
 - Untouched: trophies upstream PRs (RyGT-Team/shadgt7#54, rygt7#58, open).
