@@ -146,6 +146,25 @@ and the HD UI toggle. New options are off by default; turn them on in the launch
   background. New switch, off by default. Unverified: when the code really lands in memory, and
   how long loading screens give us.
 
+- **Plan v2 (owner "go" 2026-11-17 18:42 GMT): everything on by default, launcher only.**
+  Approved on-by-default exceptions now also: `RYGT_PIPELINE_PREWARM`, `RYGT_SPLASH_SHADER_PROGRESS`,
+  `RYGT_MANIFEST_RECORD`, `RYGT_MANIFEST_PRETRANSLATE` (each `=0` off), launcher Show Splash and
+  "Rebuild translated shaders" checked by default (unchecked rebuild sends `=0`). Compile pack
+  (`RYGT_COMPILE_PACK`) stays off: it needs shader objects; the prewarm does that job.
+- **PRT-KEEP (shadgt7 `50721c9b`):** SHD-010 clears the shader store when the renderer commit
+  changes, so each new CI build started cold. Now prewarm records are files in
+  `shaders\<serial>.prewarm\<gpu>\<keyhash>.pwk` (header magic, file v2, key size,
+  `PrewarmKeyLayout` 1; bump the layout when GraphicsPipelineKey fields change). Old in-store
+  records (d0235932) are read once and written out as files. Each manifest record gets a `.idx`
+  (its store index); pretranslate puts it back at that index when free (<256), so recorded keys
+  match again. Log: `PRT-KEEP: N at their old index` in the pretranslate line; `PRT-KEEP: a new
+  pipeline has a recorded one's stages but another key (differing: [a..b) ...)` for the first 20
+  near-misses (owner run 2: 305), then every 100. Next: read those byte ranges and fix the key.
+- **Splash bar fix (`50721c9b`):** work that starts or ends before the splash shows is noted; the
+  bar shows from the splash's first frame, "Shaders ready  N pipelines" held 2 s then fades.
+- Dropped by owner 2026-11-17: compile-width ceiling #45, shared manifest / splash precompile
+  #52 + rygt7 #53, launcher/naming PRs, wheel PRs, perf A/B.
+
 ## Fix log (keep this up to date)
 Every new commit on either `pr-tests` branch gets a line here: date, repo, commit, fix or switch,
 default, CI run, test result.
@@ -157,7 +176,11 @@ default, CI run, test result.
 | 2026-11-16 | shadgt7 | 6cba106d | late-scene restart (`RYGT_HD_UI_LATE_SCENE`), MENU_TDLSS=2, trace fixes | off then | 43963104510 | shimmer gone |
 | 2026-11-16 | shadgt7 | c5569738 | FIX-GT7-187 3D partial fill device loss | always | 43980072900 green | owner test pending |
 | 2026-11-16 | shadgt7 | f70fee41 | MENU_TDLSS on by default | on | 43980072900 green | owner test pending |
-| 2026-11-17 | shadgt7 | d0235932 | PRT-PREWARM pipeline record + start prewarm (`RYGT_PIPELINE_PREWARM`), PRT-SPLASH splash progress (`RYGT_SPLASH_SHADER_PROGRESS`) | off | 43985665386 green | owner test pending |
+| 2026-11-17 | shadgt7 | d0235932 | PRT-PREWARM pipeline record + start prewarm (`RYGT_PIPELINE_PREWARM`), PRT-SPLASH splash progress (`RYGT_SPLASH_SHADER_PROGRESS`) | off then | 43985665386 green | prewarm works (5573 in 1.5 s); bar not shown; 305 near-miss keys |
+| 2026-11-17 | rygt7 | a604a0a | merge upstream main FIX-GTS-270/271 (launcher 0.1.7, key removal) | - | pending | pending |
+| 2026-11-17 | shadgt7 | d3f0f826 | FIX-GT7-GHOST ghost car tyres (port of RyGT-Team/shadgt7#43, 7b170cbd) | always | pending | pending |
+| 2026-11-17 | shadgt7 | 50721c9b | PRT-KEEP shaders kept across builds; prewarm, splash progress, manifest record + pretranslate on by default; splash bar arms early, 2 s hold; near-miss key diagnostic | on (=0 off) | pending | pending |
+| 2026-11-17 | rygt7 | ecb2ec8 | launcher: shader rebuild + Show Splash checkboxes on by default; unchecked rebuild sends =0 | on | pending | pending |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
 
 - Untouched: trophies upstream PRs (RyGT-Team/shadgt7#54, rygt7#58, open).
