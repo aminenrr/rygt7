@@ -6,8 +6,11 @@ The version lives in `loader/Version.cs`. To release a change, bump
 `LauncherVersion.Value` there and add a section here with the same number;
 CI fails when the two disagree.
 
-## 0.1.7 - 2026-11-15
+## 0.1.7 - 2026-11-16
 
+* FIX-GTS-271: GT7's online-service keys are no longer in ryGT7. RyGTServer reads them from your own
+  GT7 eboot.bin, which the Online page passes when it starts hosting; without it, GT7's online
+  service stays off.
 * FEAT-GT7-187: a Trophies page. Enter your own 32-character trophy key once (Show / Hide); it is kept
   encrypted for your Windows account (DPAPI, user\trophy.key.dpapi) and never written in plain text or
   logged. Test checks it against the game's sce_sys\trophy\trophy00.trp (ryGT7's app0, then the update and

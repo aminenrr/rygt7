@@ -798,8 +798,11 @@ namespace RyGT
                     // RyGTServer: restarted so it has the current invite token (rooms are kept in
                     // server-data\gt7\rooms.json across the restart).
                     foreach (var old in Running("RyGTServer", ServerFolder)) { try { old.Kill(); old.WaitForExit(3000); } catch (Exception) { } }
+                    // FIX-GTS-271: GT7's online keys are read from the player's own eboot.bin.
+                    string eboot = GameFile("eboot.bin");
                     Process.Start(new ProcessStartInfo(serverExe, "--data \"" + ServerData + "\" --invite " + InviteToken() + " --shadnet \"" + ShadNetFolder + "\" --require-pass" +
-                                                                  (listPublicly.Checked ? " --list \"" + id + "\"" : ""))
+                                                                  (listPublicly.Checked ? " --list \"" + id + "\"" : "") +
+                                                                  (eboot != null ? " --gt7-eboot \"" + eboot + "\"" : ""))
                     { WorkingDirectory = ServerFolder, WindowStyle = ProcessWindowStyle.Minimized });
                     if (!OnlinePlay.WaitForPort(OnlinePlay.ServerPort, 15)) throw new InvalidOperationException("RyGTServer did not start (see its window).");
 

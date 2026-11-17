@@ -12,18 +12,36 @@ with Content-Type application/octet-stream. A body is:
                {"body": {...}, "headers": {app_name, app_version, client_version, sequence_no,
                 client_request_id, window_name, boot_session_id, ...}}
 
-Both keys are base64 strings in GT7's executable (next to "VegasPoolTransport"). Responses are
-assumed to use the same format.
+Both keys are base64 strings in GT7's executable (next to "VegasPoolTransport"). They are not in
+this file (FIX-GTS-271): give your own GT7 eboot.bin with --eboot (or RYGT_GT7_EBOOT), and the keys
+are picked out of it by their SHA-256 fingerprints. Responses are assumed to use the same format.
 
-Usage: vegas_decode.py <body file>...         prints each payload
-       vegas_decode.py --encode <json file>   writes <json file>.bin (needs the zstd tool)"""
-import base64, hashlib, hmac, os, subprocess, sys, tempfile
+Usage: vegas_decode.py --eboot <eboot.bin> <body file>...         prints each payload
+       vegas_decode.py --eboot <eboot.bin> --encode <json file>   writes <json file>.bin (needs zstd)"""
+import base64, hashlib, hmac, os, re, subprocess, sys, tempfile
 
 from Crypto.Cipher import ChaCha20
 
-CIPHER_KEY = base64.b64decode("FojitMgHIaZ4ZV+QrNZvv7OaGvxQJxJvlzZPuTM02X8=")
-HMAC_KEY = base64.b64decode("2CinLKRqDQC3ScL8QkCuvSD+34OJiPM1EkOpYM3z7d8Au8lzMEaiZYEQ929VjnJGkA2cQeZvfbKmGN8NN/VhHg==")
+CIPHER_KEY_SHA256 = "690168cbeccc3e7f9e4b19798d4b317c5a75236df2845f25449b890f0b1ecf78"
+HMAC_KEY_SHA256 = "6524bc4c832361d8bcd806f4a322e825cffcf19ec1d81e935dad390d01783c83"
+CIPHER_KEY = HMAC_KEY = None
 HEADER = 48
+
+
+def load_keys(executable):
+    """Picks GT7's two keys out of its executable: base64 runs whose SHA-256 is a key's fingerprint."""
+    global CIPHER_KEY, HMAC_KEY
+    with open(executable, "rb") as f:
+        data = f.read()
+    for match in re.finditer(rb"(?<![A-Za-z0-9+/=])(?:[A-Za-z0-9+/]{43}=|[A-Za-z0-9+/]{86}==)(?![A-Za-z0-9+/=])", data):
+        key = base64.b64decode(match.group(0))
+        fingerprint = hashlib.sha256(key).hexdigest()
+        if fingerprint == CIPHER_KEY_SHA256:
+            CIPHER_KEY = key
+        elif fingerprint == HMAC_KEY_SHA256:
+            HMAC_KEY = key
+    if CIPHER_KEY is None or HMAC_KEY is None:
+        raise SystemExit(executable + " has no GT7 online keys")
 
 
 def zstd(data, decompress):
@@ -54,6 +72,12 @@ def encode(payload, compress=True):
 
 
 def main(args):
+    eboot = os.environ.get("RYGT_GT7_EBOOT")
+    if args[:1] == ["--eboot"] and len(args) > 1:
+        eboot, args = args[1], args[2:]
+    if not eboot:
+        raise SystemExit(__doc__)
+    load_keys(eboot)
     if args[:1] == ["--encode"]:
         for name in args[1:]:
             with open(name, "rb") as f, open(name + ".bin", "wb") as out:

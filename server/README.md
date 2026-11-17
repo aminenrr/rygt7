@@ -19,7 +19,10 @@ room find each other through RyGTServer (`/rygt/p2p/session`, used by ryGT7's
 - `server-data\gt7\api\` holds RyGTServer's own replies (from this repository's `server/data`).
   Polyphony's own files (the client settings, texts, World Circuit event lists) are fetched from
   Polyphony's public servers the first time GT7 asks and kept in `server-data\gt7\cdn-cache\`.
-- `tools/vegas_decode.py` decodes (and encodes) GT7's encrypted messages, for studying captures.
+- GT7's online keys are not in RyGTServer: it reads them from your own GT7 `eboot.bin`. The launcher
+  passes it when hosting; to start RyGTServer yourself, add `--gt7-eboot <path to eboot.bin>`.
+- `tools/vegas_decode.py --eboot <eboot.bin>` decodes (and encodes) GT7's encrypted messages, for
+  studying captures.
 
 Status: signing in, the lobby, creating rooms, finding them and joining them work. The race feels
 smooth when the players are close to each other; GT7 itself rates round trips above about 200 ms as

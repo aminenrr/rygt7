@@ -32,12 +32,15 @@ namespace RyGT.Server
 {
     /// A Vegas message: 01 01 | flags (0x80: not compressed) | 00 | 12-byte nonce |
     /// HMAC-SHA256 of the ciphertext | ChaCha20 (RFC 8439, counter 0) of the payload, which is a
-    /// zstd frame unless flagged. Both keys are in GT7's executable.
+    /// zstd frame unless flagged.
+    /// FIX-GTS-271: the two keys are not in this source. They are read from the player's own GT7
+    /// executable (eboot.bin), where they sit as base64 text next to "VegasPoolTransport"; only
+    /// their SHA-256 fingerprints are here, to pick them out (RyGTServer --gt7-eboot).
     static class VegasCodec
     {
-        static readonly byte[] CipherKey = Convert.FromBase64String("FojitMgHIaZ4ZV+QrNZvv7OaGvxQJxJvlzZPuTM02X8=");
-        static readonly byte[] HmacKey = Convert.FromBase64String(
-            "2CinLKRqDQC3ScL8QkCuvSD+34OJiPM1EkOpYM3z7d8Au8lzMEaiZYEQ929VjnJGkA2cQeZvfbKmGN8NN/VhHg==");
+        const string CipherKeyFingerprint = "690168cbeccc3e7f9e4b19798d4b317c5a75236df2845f25449b890f0b1ecf78";
+        const string HmacKeyFingerprint = "6524bc4c832361d8bcd806f4a322e825cffcf19ec1d81e935dad390d01783c83";
+        static byte[] CipherKey, HmacKey;
         const int HeaderSize = 48;
         static readonly RandomNumberGenerator Random = RandomNumberGenerator.Create();
 
@@ -46,9 +49,57 @@ namespace RyGT.Server
             return data.Length >= HeaderSize && data[0] == 1 && data[1] == 1;
         }
 
+        public static bool HasKeys { get { return CipherKey != null && HmacKey != null; } }
+
+        /// Finds the keys in a GT7 executable (eboot.bin, decrypted, or its ELF): every run of 44 or
+        /// 88 base64 characters is decoded and kept when its SHA-256 is a key's fingerprint.
+        public static bool LoadKeys(string executable)
+        {
+            byte[] data = File.ReadAllBytes(executable);
+            byte[] cipher = null, hmacKey = null;
+            using (var sha = SHA256.Create())
+            {
+                int start = 0;
+                for (int i = 0; i <= data.Length; i++)
+                {
+                    if (i < data.Length && IsBase64(data[i])) continue;
+                    int length = i - start;
+                    if (length == 44 || length == 88)
+                    {
+                        byte[] key;
+                        try { key = Convert.FromBase64String(Encoding.ASCII.GetString(data, start, length)); }
+                        catch (FormatException) { key = null; }
+                        if (key != null)
+                        {
+                            string fingerprint = BitConverter.ToString(sha.ComputeHash(key)).Replace("-", "").ToLowerInvariant();
+                            if (fingerprint == CipherKeyFingerprint) cipher = key;
+                            else if (fingerprint == HmacKeyFingerprint) hmacKey = key;
+                        }
+                    }
+                    start = i + 1;
+                }
+            }
+            if (cipher == null || hmacKey == null) return false;
+            CipherKey = cipher;
+            HmacKey = hmacKey;
+            return true;
+        }
+
+        static bool IsBase64(byte c)
+        {
+            return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '=';
+        }
+
+        static void RequireKeys()
+        {
+            if (!HasKeys)
+                throw new InvalidOperationException("GT7's online keys are not loaded: start RyGTServer with --gt7-eboot <your GT7 eboot.bin>");
+        }
+
         public static byte[] Decode(byte[] message)
         {
             if (!IsMessage(message)) throw new InvalidDataException("not a Vegas message");
+            RequireKeys();
             var nonce = new byte[12];
             Array.Copy(message, 4, nonce, 0, 12);
             var ciphertext = new byte[message.Length - HeaderSize];
@@ -63,6 +114,7 @@ namespace RyGT.Server
 
         public static byte[] Encode(byte[] payload)
         {
+            RequireKeys();
             var nonce = new byte[12];
             lock (Random) Random.GetBytes(nonce);
             byte[] ciphertext = ChaCha20(nonce, Zstd.Compress(payload));

@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 // adcpatch: rewrites GT Sport (v1.69) AdHoc scripts for ryGT's offline features.
 //   adcpatch roundtrip <in.adc> <out.adc>
 //   adcpatch uikit     <UI_KIT.ADC> <out.adc> <openGrim.ad>
@@ -193,72 +192,6 @@ static void PruneSymbols(AdhocFile file, AdhocSymbolMap map)
 }
 
 string mode = args[0];
-if (mode == "extract")
-{
-    // extract <game folder> <update folder or ""> <out dir> <path>...: research helper.
-    var idx = new List<string>();
-    if (!string.IsNullOrEmpty(args[2])) idx.Add(Path.Combine(args[2], "gt.idx"));
-    idx.Add(Path.Combine(args[1], "gt.idx"));
-    var got = GameFiles.Extract(idx, args.Skip(4), args[3]);
-    Console.WriteLine($"{got.Count} of {args.Length - 4} extracted");
-    return 0;
-}
-
-if (mode == "all")
-{
-    // all <game folder> <update folder or ""> <output scripts folder>: extracts the five scripts from
-    // the player's own game volumes, patches each (this program again, one mode each), and writes
-    // them where the renderer (GTS-005) serves them from. The .ad sources sit next to this program.
-    string game = args[1], update = args[2], output = args[3];
-    string here = AppContext.BaseDirectory;
-    var jobs = new (string mode, string path, string source)[]
-    {
-        ("uikit", "PROJECTS/GT7SP/UI_KIT/UI_KIT.ADC", "openGrim.ad"),
-        ("livery2", "PROJECTS/GT7SP/LIVERY2/LIVERY2.ADC", null),
-        ("thumbnail", "SCRIPTS/GT7SP/THUMBNAIL/THUMBNAIL.ADC", null),
-        ("gallery", "PROJECTS/GT7SP/GALLERY/GALLERY.ADC", null),
-        ("grim", "SCRIPTS/GT7SP/GRIM/GRIM.ADC", "grim.ad"),
-    };
-    string work = Path.Combine(Path.GetTempPath(), "rygt-scripts-" + Environment.ProcessId);
-    Directory.CreateDirectory(work);
-    var indices = new List<string>();
-    if (!string.IsNullOrEmpty(update)) indices.Add(Path.Combine(update, "gt.idx"));
-    indices.Add(Path.Combine(game, "gt.idx"));
-    var found = GameFiles.Extract(indices, jobs.Select(j => j.path), work);
-    Directory.CreateDirectory(output);
-    int done = 0;
-    foreach (var job in jobs)
-    {
-        string input = Path.Combine(work, job.path.Replace('/', Path.DirectorySeparatorChar));
-        if (!found.Contains(job.path))
-        {
-            Console.WriteLine($"[X] {job.path} not found in the game files");
-            continue;
-        }
-        string target = Path.Combine(output, Path.GetFileName(job.path));
-        var start = new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath) { UseShellExecute = false };
-        start.ArgumentList.Add(job.mode);
-        start.ArgumentList.Add(input);
-        start.ArgumentList.Add(target);
-        // The source's path goes into the compiled script: a bare name, as the tested scripts had.
-        start.WorkingDirectory = here;
-        if (job.source != null) start.ArgumentList.Add(job.source);
-        using var process = System.Diagnostics.Process.Start(start);
-        process.WaitForExit();
-        if (process.ExitCode == 0 && File.Exists(target))
-        {
-            done++;
-            Console.WriteLine($"[OK] {Path.GetFileName(job.path)}");
-        }
-        else
-        {
-            Console.WriteLine($"[X] {job.mode} failed (exit {process.ExitCode})");
-        }
-    }
-    if (Environment.GetEnvironmentVariable("ADCPATCH_KEEP") != "1") { try { Directory.Delete(work, true); } catch { } } else Console.WriteLine($"originals kept in {work}");
-    Console.WriteLine($"{done} of {jobs.Length} scripts patched into {output}");
-    return done == jobs.Length ? 0 : 1;
-}
 if (mode == "roundtrip")
 {
     var file = Load(args[1], out var map);

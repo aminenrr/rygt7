@@ -32,6 +32,7 @@ namespace RyGT.Server
         public string ListName = "";      // --list: the name to show in the public server list
         public string ShadNetDirectory;   // --shadnet: the shadNet folder, for creating accounts
         public bool RequirePass;          // --require-pass: joining needs a ryGT7 account's pass
+        public string Gt7Executable;      // --gt7-eboot: the player's GT7 eboot.bin, for its online keys
 
         public static Options Parse(string[] args)
         {
@@ -48,6 +49,7 @@ namespace RyGT.Server
                 else if (arg == "--list" && next != null) { options.ListName = next; i++; }
                 else if (arg == "--shadnet" && next != null) { options.ShadNetDirectory = Path.GetFullPath(next); i++; }
                 else if (arg == "--require-pass") options.RequirePass = true;
+                else if (arg == "--gt7-eboot" && next != null) { options.Gt7Executable = Path.GetFullPath(next); i++; }
                 else if (arg == "--help" || arg == "-h" || arg == "/?") return null;
                 else throw new ArgumentException("Unknown option " + arg);
             }
@@ -56,7 +58,7 @@ namespace RyGT.Server
 
         public const string Usage =
             "RyGTServer [--port 7890] [--data <folder>] [--default-status 404] [--no-capture]\n" +
-            "           [--invite <token> --shadnet <folder> [--require-pass]]\n" +
+            "           [--invite <token> --shadnet <folder> [--require-pass]] [--gt7-eboot <eboot.bin>]\n" +
             "  --port            TCP port to listen on (all network interfaces).\n" +
             "  --data            Folder for responses\\ and captures\\ (default: server-data next to RyGTServer.exe).\n" +
             "  --default-status  Status for requests with no response file (default 404).\n" +
@@ -64,7 +66,8 @@ namespace RyGT.Server
             "  --invite          Lets players with this token join: RyGT's launcher sends it from an invite\n" +
             "                    code, and the server creates their shadNet account (needs --shadnet).\n" +
             "  --shadnet         The folder of the shadNet server running on this PC (its shadnet.cfg).\n" +
-            "  --require-pass    Players must prove their online ID with a pass from their ryGT7 account.";
+            "  --require-pass    Players must prove their online ID with a pass from their ryGT7 account.\n" +
+            "  --gt7-eboot       Your GT7 eboot.bin (or RYGT_GT7_EBOOT): GT7's online service reads its keys from it.";
     }
 
     class HttpRequest
@@ -1747,6 +1750,19 @@ namespace RyGT.Server
             peers = new Peers(text => Log(ConsoleColor.Magenta, text));
             invites = new Invites(options, text => Log(ConsoleColor.Green, text));
             gt7 = new Gt7(options.DataDirectory, text => Log(ConsoleColor.Cyan, text), peers.OthersInSession);
+            // FIX-GTS-271: GT7's online keys come from the player's own executable, not this program.
+            string gt7Executable = options.Gt7Executable ?? Environment.GetEnvironmentVariable("RYGT_GT7_EBOOT");
+            if (string.IsNullOrEmpty(gt7Executable))
+                Log(ConsoleColor.Yellow, "GT7: no --gt7-eboot given, so GT7's online service is off (GT Sport is not affected)");
+            else
+            {
+                try
+                {
+                    if (VegasCodec.LoadKeys(gt7Executable)) Log(ConsoleColor.Cyan, "GT7: online keys read from " + gt7Executable);
+                    else Log(ConsoleColor.Red, "GT7: " + gt7Executable + " has no GT7 online keys; GT7's online service is off");
+                }
+                catch (Exception e) { Log(ConsoleColor.Red, "GT7: could not read " + gt7Executable + ": " + e.Message); }
+            }
             peers.Joined = gt7.PlayerJoined;
             relay = new Relay(options.Port, () => peers.PublicAddress, options.InviteToken, text => Log(ConsoleColor.Magenta, text));
             if (options.Capture) captures = new Captures(options.DataDirectory);
