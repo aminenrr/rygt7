@@ -155,8 +155,8 @@ default, CI run, test result.
 | 2026-11-16 | shadgt7 | 57200074 | HD UI menus keep resolved picture (stopgap) | on (superseded) | 43860628121 | still shimmer |
 | 2026-11-16 | shadgt7 | dcfd4f5b | `RYGT_HD_UI_MENU_TDLSS` temporal inputs for the proxy | off then | 43867936183 | no change alone |
 | 2026-11-16 | shadgt7 | 6cba106d | late-scene restart (`RYGT_HD_UI_LATE_SCENE`), MENU_TDLSS=2, trace fixes | off then | 43963104510 | shimmer gone |
-| 2026-11-16 | shadgt7 | c5569738 | FIX-GT7-187 3D partial fill device loss | always | 43980072900 | pending |
-| 2026-11-16 | shadgt7 | f70fee41 | MENU_TDLSS on by default | on | 43980072900 | pending |
+| 2026-11-16 | shadgt7 | c5569738 | FIX-GT7-187 3D partial fill device loss | always | 43980072900 green | owner test pending |
+| 2026-11-16 | shadgt7 | f70fee41 | MENU_TDLSS on by default | on | 43980072900 green | owner test pending |
 | 2026-11-17 | shadgt7 | d0235932 | PRT-PREWARM pipeline record + start prewarm (`RYGT_PIPELINE_PREWARM`), PRT-SPLASH splash progress (`RYGT_SPLASH_SHADER_PROGRESS`) | off | pending | pending |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
 
