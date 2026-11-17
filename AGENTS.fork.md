@@ -210,7 +210,7 @@ default, CI run, test result.
 | 2026-11-17 | shadgt7 | 50721c9b | PRT-KEEP shaders kept across builds; prewarm, splash progress, manifest record + pretranslate on by default; splash bar arms early, 2 s hold; near-miss key diagnostic | on (=0 off) | 44163135699 green | pending |
 | 2026-11-17 | shadgt7 | c6066056 | FIX-PRT-DLSS: DLSS / HD UI DLSS never off for the run after a failure (VRAM-budget drop at 19:28 in owner log): ~120-frame pause then retry; temporal never refused for good | always | 44163135699 green | pending |
 | 2026-11-17 | rygt7 | ecb2ec8 | launcher: shader rebuild + Show Splash checkboxes on by default; unchecked rebuild sends =0 | on | 44163135699 green | pending |
-| 2026-11-17 | shadgt7 | c54af2d0 | PRT-PERF-A: PRT-ECORE driver compiles on E-cores (`RYGT_ECORE_DRIVER_COMPILE`), PRT-SAMPLER sampler dedupe + coarse stand-in (`RYGT_SAMPLER_DEDUPE`), PRT-PERF 10 s GPU/CPU line (`RYGT_PERF_LINE`) | on (=0 off) | pending | pending |
+| 2026-11-17 | shadgt7 | c54af2d0 | PRT-PERF-A: PRT-ECORE driver compiles on E-cores (`RYGT_ECORE_DRIVER_COMPILE`), PRT-SAMPLER sampler dedupe + coarse stand-in (`RYGT_SAMPLER_DEDUPE`), PRT-PERF 10 s GPU/CPU line (`RYGT_PERF_LINE`) | on (=0 off) | 44193422305 green | pending |
 | planned | shadgt7 | - | Build B: PRT-KEEP key fix, VRAM trim, tess batching | on (=0 off) | - | - |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
 
