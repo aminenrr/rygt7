@@ -170,6 +170,29 @@ and the HD UI toggle. New options are off by default; turn them on in the launch
 - Dropped by owner 2026-11-17: compile-width ceiling #45, shared manifest / splash precompile
   #52 + rygt7 #53, launcher/naming PRs, wheel PRs, perf A/B.
 
+## Perf plan (owner OK 2026-11-17 22:44 GMT)
+Owner machine: i7-12700H (6P+8E), 32 GB DDR5, RTX 3070 Ti mobile 8 GB, laptop. Owner rule: batch
+changes so each CI build carries several; two builds for this plan. Baseline (owner log 19:44,
+cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder busy p50 76%, p90
+88%; 21 compile catch-ups (442 s); 3,180 FIX-GT7-002 sampler-limit errors (3937/4000).
+- **Build A (`c54af2d0`, PRT-PERF-A):**
+  - PRT-ECORE `RYGT_ECORE_DRIVER_COMPILE` (on): on hybrid CPUs `compile_ids` = efficiency cores and
+    `ConfineDriverCompileThreads` runs there too (was uniform CPUs only), so nvgpucomp64's threads
+    leave the P-cores. Widening unchanged: every core only while the game waits, never in a race.
+    Log: `PRT-ECORE: driver compiles on the N efficiency logical processors`,
+    `PERF-GT7-024: N driver compiler threads moved to the compile cores`.
+  - PRT-SAMPLER `RYGT_SAMPLER_DEDUPE` (on): LOD quarter steps from limit/2 (was 3/4), resolution
+    bias 1/16 steps, custom border colour 8-bit steps in the key; at the limit the first sampler
+    with the same coarse state (filters, clamps, aniso, compare, border type) stands in, not the
+    last made. Log: `PRT-SAMPLER: N samplers ... for M coarse states` once at half the limit.
+  - PRT-PERF `RYGT_PERF_LINE` (on): `PRT-PERF 10.0 s: GPU busy X% ..., N submits; CPU process ...`
+    every 10 s in builds without diagnostics (busy = submitted GPU work unfinished, 1 ms samples).
+  - P2 (merge mid-frame submits) dropped: fences already batch at 2 ms
+    (`RYGT_NATIVE_FENCE_BATCH_MS`), the rest are waits the game needs; risk of stalls.
+- **Build B (from the owner's warm Build A log):** PRT-KEEP key near-miss fix; VRAM trim of
+  DLSS/HD UI proxies (budget 6342 MB); tess LDS barrier batching only if PRT-PERF shows GPU-bound;
+  fixes for anything Build A broke.
+
 ## Fix log (keep this up to date)
 Every new commit on either `pr-tests` branch gets a line here: date, repo, commit, fix or switch,
 default, CI run, test result.
@@ -187,6 +210,8 @@ default, CI run, test result.
 | 2026-11-17 | shadgt7 | 50721c9b | PRT-KEEP shaders kept across builds; prewarm, splash progress, manifest record + pretranslate on by default; splash bar arms early, 2 s hold; near-miss key diagnostic | on (=0 off) | 44163135699 green | pending |
 | 2026-11-17 | shadgt7 | c6066056 | FIX-PRT-DLSS: DLSS / HD UI DLSS never off for the run after a failure (VRAM-budget drop at 19:28 in owner log): ~120-frame pause then retry; temporal never refused for good | always | 44163135699 green | pending |
 | 2026-11-17 | rygt7 | ecb2ec8 | launcher: shader rebuild + Show Splash checkboxes on by default; unchecked rebuild sends =0 | on | 44163135699 green | pending |
+| 2026-11-17 | shadgt7 | c54af2d0 | PRT-PERF-A: PRT-ECORE driver compiles on E-cores (`RYGT_ECORE_DRIVER_COMPILE`), PRT-SAMPLER sampler dedupe + coarse stand-in (`RYGT_SAMPLER_DEDUPE`), PRT-PERF 10 s GPU/CPU line (`RYGT_PERF_LINE`) | on (=0 off) | pending | pending |
+| planned | shadgt7 | - | Build B: PRT-KEEP key fix, VRAM trim, tess batching | on (=0 off) | - | - |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
 
 - Untouched: trophies upstream PRs (RyGT-Team/shadgt7#54, rygt7#58, open).
