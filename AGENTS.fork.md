@@ -118,6 +118,25 @@ and the HD UI toggle. New options are off by default; turn them on in the launch
   (built / skipped / failed / time). New switch, off by default. Test: race the same cars twice.
   Watch for stale entries and VRAM. Never-loaded content still compiles the first time.
 - The full shadGT #40/#42/#44 precompile port was handed to the other fork agent on 2026-11-14.
+- **Built 2026-11-17 (owner OK 2026-11-16 23:56): shadgt7 `d0235932`, PRT-PREWARM.**
+  `RYGT_PIPELINE_PREWARM=1` (off by default): each new graphics pipeline's key is recorded once in
+  the shader store (`prewarm-<hash>.key`; stages = stored translations by permutation hash). Next
+  start, after the pretranslate, the recorded pipelines build from the store on low-priority
+  threads (hw/4, 1..4), paused while `g_game_in_play`. A draw takes a prewarmed pipeline
+  (`PipelineForCurrentKey`, before the async-skip path); read-ahead skips those keys; prewarm
+  modules are handed to programs in `LoadStoredModule`. Log: `PRT-PREWARM: N recorded pipelines
+  in T s on K threads: B built, S skipped (game first, not buildable), F failed`, then
+  `PRT-PREWARM: N prewarmed pipelines taken by draws` (1st and every 250).
+  Not prewarmed: geometry stages, mip-count (DynamicIndex) image bindings, translations
+  LoadStoredModule would redo; whole prewarm off without dynamic vertex input, with shader
+  objects or shader patches (logged). Prewarm build skips `GetSharp` (`t_prewarm_build`).
+  Test: run once with it on (records), restart, race the same cars: no pop. Watch VRAM/RAM.
+- **Splash progress, PRT-SPLASH (`d0235932`):** `RYGT_SPLASH_SHADER_PROGRESS=1` (off by default),
+  needs Show Splash. Centred bar near the bottom of the splash (RyGTS PERF-098 style), drawn in
+  `ryty_entry.cpp` `DrawFpsCounter` (present thread) from `Vulkan::BootProgress` counters
+  (build_queue.h): "Building shaders X / Y" (pretranslate), then "Building pipelines X / Y"
+  (prewarm). Only if the work started while the splash showed; stays till done, hidden in
+  races, then "Shaders ready" fades. The game is not held on the splash (RyGTS PERF-102 is).
 - Planned after the prewarm (owner OK 2026-11-16): **shared manifest, load-screen translate.** A
   manifest record has no shader code (inputs, guest reads, SPIR-V hash); the code stays in the
   local capture, so a shared manifest alone can't translate content the player never loaded. Idea:
@@ -138,7 +157,7 @@ default, CI run, test result.
 | 2026-11-16 | shadgt7 | 6cba106d | late-scene restart (`RYGT_HD_UI_LATE_SCENE`), MENU_TDLSS=2, trace fixes | off then | 43963104510 | shimmer gone |
 | 2026-11-16 | shadgt7 | c5569738 | FIX-GT7-187 3D partial fill device loss | always | 43980072900 | pending |
 | 2026-11-16 | shadgt7 | f70fee41 | MENU_TDLSS on by default | on | 43980072900 | pending |
-| planned | shadgt7 | - | pipeline record + title prewarm | off | - | - |
+| 2026-11-17 | shadgt7 | d0235932 | PRT-PREWARM pipeline record + start prewarm (`RYGT_PIPELINE_PREWARM`), PRT-SPLASH splash progress (`RYGT_SPLASH_SHADER_PROGRESS`) | off | pending | pending |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
 
 - Untouched: trophies upstream PRs (RyGT-Team/shadgt7#54, rygt7#58, open).
