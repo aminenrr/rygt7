@@ -1766,7 +1766,7 @@ namespace RyGT
             var display = Section(displayPage, "Screen");
             AddScreenSettings(display);
             AddOption(display, "Show an FPS counter", "General", "show_fps_counter", false);
-            AddOption(display, "Show the splash screen while the game starts", "General", "show_splash", false);
+            AddOption(display, "Show the splash screen while the game starts", "General", "show_splash", true); // PRT-SPLASH: on by default (pr-tests)
             AddOption(display, "Show the game on Discord (Rich Presence)", "General", "discord_rpc_enabled", true);
             AddMemorySetting(display);
             AddVideoMemorySetting(display);
@@ -2411,7 +2411,7 @@ namespace RyGT
             // A tester's RX 6000 series card crashed loading into races with it on (2026-10-30).
             graphics.Controls.Add(Hint("Can crash RX 6000 series GPUs when loading into a race. If the game crashes when a race loads, turn this off."));
             // PERF-GT7-111/117: shader pre-translation (RYGT_MANIFEST_RECORD / RYGT_MANIFEST_PRETRANSLATE).
-            AddOption(graphics, "Rebuild translated shaders in the background after a renderer update (about 30 MB a track)", "GPU", "shader_pretranslate", false);
+            AddOption(graphics, "Rebuild translated shaders in the background after a renderer update (about 30 MB a track)", "GPU", "shader_pretranslate", true); // PRT-KEEP: on by default (pr-tests)
             // PERF-GT7-108: the compile pack (RYGT_COMPILE_PACK).
             AddOption(graphics, "Compile the shaders already seen on this PC at start, after a driver update (background, pauses in races)", "GPU", "compile_pack", false);
             fpsLock.SelectedIndexChanged += delegate
@@ -4194,10 +4194,18 @@ namespace RyGT
                         // again in the background, so the races after an update start as warm ones.
                         // Only when checked (like the compile pack below): a launcher script that
                         // sets them itself keeps its setting.
-                        if (GpuSetting(root, "shader_pretranslate") is bool && (bool)GpuSetting(root, "shader_pretranslate"))
+                        // PRT-KEEP (pr-tests): the renderer has them on by default; unchecked turns them off
+                        // (unless a script set them already).
+                        object pretranslate = GpuSetting(root, "shader_pretranslate");
+                        if (!(pretranslate is bool) || (bool)pretranslate)
                         {
                             start.EnvironmentVariables["RYGT_MANIFEST_RECORD"] = "1";
                             start.EnvironmentVariables["RYGT_MANIFEST_PRETRANSLATE"] = "1";
+                        }
+                        else
+                        {
+                            foreach (string name in new[] { "RYGT_MANIFEST_RECORD", "RYGT_MANIFEST_PRETRANSLATE" })
+                                if (string.IsNullOrEmpty(start.EnvironmentVariables[name])) start.EnvironmentVariables[name] = "0";
                         }
                         // PERF-GT7-108 from the Graphics page: the pipelines this PC's driver cache lacks (after
                         // a driver update) are compiled at start from the recipes kept in the compile pack.
