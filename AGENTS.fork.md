@@ -189,7 +189,7 @@ cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder bu
     every 10 s in builds without diagnostics (busy = submitted GPU work unfinished, 1 ms samples).
   - P2 (merge mid-frame submits) dropped: fences already batch at 2 ms
     (`RYGT_NATIVE_FENCE_BATCH_MS`), the rest are waits the game needs; risk of stalls.
-- **Build A+ (`ff9c84d7`, owner handoff 2026-11-18, same CI build as Build A):**
+- **Build A+ (`ff9c84d7`, owner handoff 2026-11-18, built on Build A, CI 44391891394 green):**
   - PRT-LATE `RYGT_HD_UI_LATE_TEMPORAL` (on, owner-approved default; `=0` old behaviour): after a
     late-scene restart, and when an idle proxy is first composited, the HD UI proxy scales right
     after its composite in the same frame with that frame's depth/motion/jitter (GT Auto shimmer:
@@ -201,6 +201,9 @@ cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder bu
   - PRT-BINK `RYGT_DIAG_BINK=1` (off): pre-rendered cutscene diagnostic, one line/s while Bink
     threads submit GPU work (submits, time in submit call, frames presented, top compute
     programs, no-pipeline dispatches, fence latency, pipeline skips).
+  - Cutscene frame skips (13-30 changed frames/s, Bink) predate DLSS, HD UI and prewarm (owner,
+    2026-11-18), so those are not suspects. Test: baseline + `RYGT_NATIVE_FENCE_BATCH_MS=0`, both with
+    `RYGT_DIAG_BINK=1`, same cutscene; fix C planned from the PRT-BINK lines, on only with owner OK.
 - **Build B (from the owner's warm Build A log):** PRT-KEEP key near-miss fix; VRAM trim of
   DLSS/HD UI proxies (budget 6342 MB); tess LDS barrier batching only if PRT-PERF shows GPU-bound;
   fixes for anything Build A broke.
