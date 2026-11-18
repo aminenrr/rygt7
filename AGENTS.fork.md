@@ -204,6 +204,22 @@ cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder bu
   - Cutscene frame skips (13-30 changed frames/s, Bink) predate DLSS, HD UI and prewarm (owner,
     2026-11-18), so those are not suspects. Test: baseline + `RYGT_NATIVE_FENCE_BATCH_MS=0`, both with
     `RYGT_DIAG_BINK=1`, same cutscene; fix C planned from the PRT-BINK lines, on only with owner OK.
+- **Build C (`f0c493f9`, 2026-11-18, owner go 23:03; on Build A+):** owner test 23:00: HD UI off =
+  GT Auto sharp, so the HD UI proxy path made GT Auto's 3D aliased/low-res.
+  - G3 `RYGT_HD_UI_LATE_GIVE_UP` (on, owner-approved): a late-composite screen (GT Auto) drops the
+    HD UI proxy for the frame (at the late restart, then already at the early display draw while
+    the screen keeps compositing late); the presenter's temporal DLSS takes the display, UI at
+    native res there only.
+  - G1 `RYGT_HD_UI_LATE_SKIP_EARLY=1` (off, only with G3=0): draws before the composite stay native,
+    one temporal scale right after the composite.
+  - G2 `RYGT_HD_UI_OWN_VIEWPORT=1` (off): HD UI temporal DLSS on Streamline viewport 3.
+  - G4 logs: `PRT-GTAUTO` every 600 frames on a late screen; `PRT-DLSS-STATS` every 600 DLSS calls.
+  - V1 `RYGT_DLSS_VRAM_RESERVE` (384 MB, 0 off): on a Streamline "Exceeded VRAM budget" or usage
+    within the reserve of the budget, PERF-GT7-005 idle kept textures halve (max every 300 frames,
+    down to 1/16); back a step after 3600 calm frames. Log `PRT-VRAM`.
+  - V2 `RYGT_DLSS_FREE_SIDE` (on): slFreeResources on the side viewport after 600 idle calls.
+  - V3 `RYGT_DLSS_RETRY_CALLS` (120): temporal retry after refusal (was 600, 3600 after 8).
+  - V4 PRT-PERF line adds `VRAM used of budget MB`.
 - **Build B (from the owner's warm Build A log):** PRT-KEEP key near-miss fix; VRAM trim of
   DLSS/HD UI proxies (budget 6342 MB); tess LDS barrier batching only if PRT-PERF shows GPU-bound;
   fixes for anything Build A broke.
@@ -227,6 +243,7 @@ default, CI run, test result.
 | 2026-11-17 | rygt7 | ecb2ec8 | launcher: shader rebuild + Show Splash checkboxes on by default; unchecked rebuild sends =0 | on | 44163135699 green | pending |
 | 2026-11-17 | shadgt7 | c54af2d0 | PRT-PERF-A: PRT-ECORE driver compiles on E-cores (`RYGT_ECORE_DRIVER_COMPILE`), PRT-SAMPLER sampler dedupe + coarse stand-in (`RYGT_SAMPLER_DEDUPE`), PRT-PERF 10 s GPU/CPU line (`RYGT_PERF_LINE`) | on (=0 off) | 44193422305 green | pending |
 | 2026-11-18 | shadgt7 | ff9c84d7 | PRT-LATE HD UI proxy scales right after its composite (`RYGT_HD_UI_LATE_TEMPORAL`), HD race hold (`RYGT_HD_RACE_HOLD`, 30), PRT-BINK cutscene diagnostic (`RYGT_DIAG_BINK=1`) | on (=0 off); BINK off | 44391891394 green | pending |
+| 2026-11-18 | shadgt7 | f0c493f9 | Build C: PRT-GTAUTO GT Auto to presenter DLSS (`RYGT_HD_UI_LATE_GIVE_UP`), G1 `RYGT_HD_UI_LATE_SKIP_EARLY`, G2 `RYGT_HD_UI_OWN_VIEWPORT`; PRT-VRAM `RYGT_DLSS_VRAM_RESERVE` 384, `RYGT_DLSS_FREE_SIDE`, `RYGT_DLSS_RETRY_CALLS` 120; PRT-PERF VRAM | G3/V on (=0 off); G1/G2 off | pending | pending |
 | planned | shadgt7 | - | Build B: PRT-KEEP key fix, VRAM trim, tess batching | on (=0 off) | - | - |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
 
