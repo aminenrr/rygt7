@@ -189,6 +189,18 @@ cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder bu
     every 10 s in builds without diagnostics (busy = submitted GPU work unfinished, 1 ms samples).
   - P2 (merge mid-frame submits) dropped: fences already batch at 2 ms
     (`RYGT_NATIVE_FENCE_BATCH_MS`), the rest are waits the game needs; risk of stalls.
+- **Build A+ (`ff9c84d7`, owner handoff 2026-11-18, same CI build as Build A):**
+  - PRT-LATE `RYGT_HD_UI_LATE_TEMPORAL` (on, owner-approved default; `=0` old behaviour): after a
+    late-scene restart, and when an idle proxy is first composited, the HD UI proxy scales right
+    after its composite in the same frame with that frame's depth/motion/jitter (GT Auto shimmer:
+    before, it scaled at the next display draw one frame later, single DLSS). Log in HDUI-SRC:
+    `late scene scaled temporal/single`, `composites scaled temporal right after/single`; each
+    single logs `late scene scaled single` with the reason.
+  - HD race hold `RYGT_HD_RACE_HOLD` (30 frames, `0` off): hd_race stays on 30 frames after the
+    raw sign drops in 3D menus. Counter `HD race held`.
+  - PRT-BINK `RYGT_DIAG_BINK=1` (off): pre-rendered cutscene diagnostic, one line/s while Bink
+    threads submit GPU work (submits, time in submit call, frames presented, top compute
+    programs, no-pipeline dispatches, fence latency, pipeline skips).
 - **Build B (from the owner's warm Build A log):** PRT-KEEP key near-miss fix; VRAM trim of
   DLSS/HD UI proxies (budget 6342 MB); tess LDS barrier batching only if PRT-PERF shows GPU-bound;
   fixes for anything Build A broke.
@@ -211,6 +223,7 @@ default, CI run, test result.
 | 2026-11-17 | shadgt7 | c6066056 | FIX-PRT-DLSS: DLSS / HD UI DLSS never off for the run after a failure (VRAM-budget drop at 19:28 in owner log): ~120-frame pause then retry; temporal never refused for good | always | 44163135699 green | pending |
 | 2026-11-17 | rygt7 | ecb2ec8 | launcher: shader rebuild + Show Splash checkboxes on by default; unchecked rebuild sends =0 | on | 44163135699 green | pending |
 | 2026-11-17 | shadgt7 | c54af2d0 | PRT-PERF-A: PRT-ECORE driver compiles on E-cores (`RYGT_ECORE_DRIVER_COMPILE`), PRT-SAMPLER sampler dedupe + coarse stand-in (`RYGT_SAMPLER_DEDUPE`), PRT-PERF 10 s GPU/CPU line (`RYGT_PERF_LINE`) | on (=0 off) | 44193422305 green | pending |
+| 2026-11-18 | shadgt7 | ff9c84d7 | PRT-LATE HD UI proxy scales right after its composite (`RYGT_HD_UI_LATE_TEMPORAL`), HD race hold (`RYGT_HD_RACE_HOLD`, 30), PRT-BINK cutscene diagnostic (`RYGT_DIAG_BINK=1`) | on (=0 off); BINK off | pending | pending |
 | planned | shadgt7 | - | Build B: PRT-KEEP key fix, VRAM trim, tess batching | on (=0 off) | - | - |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
 
