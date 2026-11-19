@@ -241,6 +241,22 @@ struct Decoder {
     std::atomic<std::uint64_t> statSnaps{0};
     std::atomic<std::int64_t> statDriftMs{0};
     std::chrono::steady_clock::time_point statSince = std::chrono::steady_clock::now();
+    // PRT-AVTEX (Build B3): frames shown stay out of the free pool for `hold` more takes (RYGT_AVP_HOLD), and
+    // the free pool is taken oldest first while holding. releasedAt: when each buffer stopped being shown.
+    std::uint32_t hold = 0;
+    std::deque<std::uint8_t*> heldVideo;
+    std::vector<std::pair<std::uint8_t*, std::chrono::steady_clock::time_point>> releasedAt;
+    std::uint64_t statRewrite20 = 0, statRewrite50 = 0; // buffers rewritten within 20 / 50 ms of being shown
+    std::uint64_t texLuma = 0, texAll = 0, texFaults = 0; // renderer counters at the last 2 s line
+    // PRT-AVAUDIO (Build B3): the first 5 s of audio pulls after playback starts.
+    std::chrono::steady_clock::time_point avaStart{}, avaLastPull{};
+    bool avaLogged = false;
+    std::uint64_t avaPulls = 0, avaEmpty = 0, avaGaps = 0, avaJumps = 0, avaRepeats = 0;
+    std::int64_t avaMinQueuedMs = -1, avaFirstPullMs = -1;
+    std::uint64_t avaLastTs = 0, avaLastDurMs = 0;
+    bool avaHaveLast = false;
+    std::uint64_t avaPullerCores = 0;
+    std::atomic<std::uint64_t> avaVideoCores{0}, avaAudioCores{0};
 };
 
 std::uint64_t MicrosSince(std::chrono::steady_clock::time_point t) {
@@ -335,6 +351,147 @@ bool AvpSmoothClock() {
         return v;
     }();
     return on;
+}
+
+// Build B3 switches (pr-tests, all off by default).
+// RYGT_AVP_HOLD=N: a frame buffer the title was shown stays out of the decoder's reach for N more takes, and the
+// free pool is taken oldest first. Without it the buffer just released was the next one overwritten, ~2 ms later,
+// while the GPU could still be reading it (the decoder waits ~1.7 s of every 2 s for a free buffer).
+std::uint32_t AvpHold() {
+    static const std::uint32_t n = [] {
+        const char* env = std::getenv("RYGT_AVP_HOLD");
+        const int v = env ? std::atoi(env) : 0;
+        const auto r = static_cast<std::uint32_t>(std::clamp(v, 0, 8));
+        std::fprintf(stderr, "[AVP] PRT-AVTEX: frame hold %u (RYGT_AVP_HOLD)\n", r);
+        return r;
+    }();
+    return n;
+}
+// RYGT_AVP_INVALIDATE=1: the renderer is told before the decoder writes a frame into guest memory (as file reads
+// do), so the texture is marked changed at once instead of on ~760 write faults per frame.
+bool AvpInvalidate() {
+    static const bool on = [] {
+        const char* env = std::getenv("RYGT_AVP_INVALIDATE");
+        const bool v = env && env[0] == '1';
+        std::fprintf(stderr, "[AVP] PRT-AVTEX: invalidate before write %s (RYGT_AVP_INVALIDATE)\n", v ? "on" : "off");
+        return v;
+    }();
+    return on;
+}
+// RYGT_AVP_PREFILL_MS=N: Start waits (at most 500 ms) until N ms of audio and a picture are decoded, and the
+// clock starts after that.
+std::uint32_t AvpPrefillMs() {
+    static const std::uint32_t n = [] {
+        const char* env = std::getenv("RYGT_AVP_PREFILL_MS");
+        const int v = env ? std::atoi(env) : 0;
+        const auto r = static_cast<std::uint32_t>(std::clamp(v, 0, 400));
+        std::fprintf(stderr, "[AVP] PRT-AVAUDIO: audio prefill %u ms (RYGT_AVP_PREFILL_MS)\n", r);
+        return r;
+    }();
+    return n;
+}
+
+// The renderer's exports (libSceVideoOut.prx is the renderer); null when an older renderer lacks them.
+template <typename F>
+F RendererExport(const char* name) {
+    HMODULE renderer = GetModuleHandleA("libSceVideoOut.prx");
+    return renderer != nullptr ? reinterpret_cast<F>(reinterpret_cast<void*>(GetProcAddress(renderer, name))) : nullptr;
+}
+void GpuInvalidate(void* buffer, std::size_t bytes) {
+    using Fn = void (*)(std::uint64_t, std::uint64_t);
+    static const Fn fn = RendererExport<Fn>("RytyGpuInvalidateMemory");
+    if (fn != nullptr && buffer != nullptr && bytes != 0) fn(reinterpret_cast<std::uint64_t>(buffer), bytes);
+}
+void GpuAvTexRange(void* buffer, std::size_t bytes, bool add) {
+    using Fn = void (*)(std::uint64_t, std::uint64_t, int);
+    static const Fn fn = RendererExport<Fn>("RytyGpuAvTexRange");
+    if (fn != nullptr && buffer != nullptr) fn(reinterpret_cast<std::uint64_t>(buffer), bytes, add ? 1 : 0);
+}
+bool GpuAvTexStats(std::uint64_t& luma, std::uint64_t& all, std::uint64_t& faults) {
+    using Fn = void (*)(std::uint64_t*, std::uint64_t*, std::uint64_t*);
+    static const Fn fn = RendererExport<Fn>("RytyGpuAvTexStats");
+    if (fn == nullptr) return false;
+    fn(&luma, &all, &faults);
+    return true;
+}
+std::uint64_t CoreBit() {
+    const DWORD n = GetCurrentProcessorNumber();
+    return n < 64 ? (1ull << n) : 0;
+}
+
+// Caller holds d->mutex.
+std::uint64_t QueuedAudioMs(const Decoder& d) {
+    const std::uint64_t perMs = static_cast<std::uint64_t>(d.channels) * 2u * d.sampleRate / 1000u;
+    if (perMs == 0) return 0;
+    std::uint64_t bytes = 0;
+    for (const auto& f : d.audio) bytes += f.bytes;
+    return bytes / perMs;
+}
+
+// Caller holds d->mutex. A buffer that stopped being shown: held for `hold` takes, then free.
+void ReleaseShown(Decoder& d, std::uint8_t* buffer) {
+    const auto now = std::chrono::steady_clock::now();
+    bool found = false;
+    for (auto& r : d.releasedAt)
+        if (r.first == buffer) { r.second = now; found = true; break; }
+    if (!found) d.releasedAt.emplace_back(buffer, now);
+    if (d.hold == 0) {
+        d.freeVideo.push_back(buffer);
+        return;
+    }
+    d.heldVideo.push_back(buffer);
+    while (d.heldVideo.size() > d.hold) {
+        d.freeVideo.push_back(d.heldVideo.front());
+        d.heldVideo.pop_front();
+    }
+}
+
+void LogAudioStart(Decoder& d, const char* why) {
+    if (d.avaLogged) return;
+    d.avaLogged = true;
+    std::fprintf(stderr, "[AVP] PRT-AVAUDIO (%s): %llu pulls, %llu empty, lowest queued %lld ms, %llu gaps over 30 ms "
+                 "between pulls, first pull %lld ms after start, %llu timestamp jumps, %llu repeats; cores: title "
+                 "puller 0x%llx, audio decoder 0x%llx, video decoder 0x%llx (SceSndzAudioOutMain on P-cores)\n",
+                 why, static_cast<unsigned long long>(d.avaPulls), static_cast<unsigned long long>(d.avaEmpty),
+                 static_cast<long long>(d.avaMinQueuedMs), static_cast<unsigned long long>(d.avaGaps),
+                 static_cast<long long>(d.avaFirstPullMs), static_cast<unsigned long long>(d.avaJumps),
+                 static_cast<unsigned long long>(d.avaRepeats), static_cast<unsigned long long>(d.avaPullerCores),
+                 static_cast<unsigned long long>(d.avaAudioCores.load()),
+                 static_cast<unsigned long long>(d.avaVideoCores.load()));
+    std::fflush(stderr);
+}
+
+// Caller holds d->mutex. One audio pull of the title while playing (got: a block was handed out).
+void NoteAudioPull(Decoder& d, bool got) {
+    if (d.avaLogged || d.avaStart == std::chrono::steady_clock::time_point{}) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (now - d.avaStart >= std::chrono::seconds(5)) {
+        LogAudioStart(d, "first 5 s");
+        return;
+    }
+    if (d.avaPulls == 0)
+        d.avaFirstPullMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - d.avaStart).count();
+    else if (now - d.avaLastPull > std::chrono::milliseconds(30))
+        ++d.avaGaps;
+    d.avaLastPull = now;
+    ++d.avaPulls;
+    d.avaPullerCores |= CoreBit();
+    if (!got) {
+        if (!d.eof) ++d.avaEmpty;
+        return;
+    }
+    const auto queued = static_cast<std::int64_t>(QueuedAudioMs(d));
+    if (d.avaMinQueuedMs < 0 || queued < d.avaMinQueuedMs) d.avaMinQueuedMs = queued;
+    const std::uint64_t ts = d.currentAudio.timestamp;
+    const std::uint64_t perMs = static_cast<std::uint64_t>(d.channels) * 2u * d.sampleRate / 1000u;
+    const std::uint64_t dur = perMs != 0 ? d.currentAudio.bytes / perMs : 0;
+    if (d.avaHaveLast) {
+        if (ts <= d.avaLastTs) ++d.avaRepeats;
+        else if (ts > d.avaLastTs + d.avaLastDurMs + 5) ++d.avaJumps;
+    }
+    d.avaLastTs = ts;
+    d.avaLastDurMs = dur;
+    d.avaHaveLast = true;
 }
 
 // Caller holds the lock.
@@ -532,13 +689,30 @@ AVCodecContext* OpenCodec(AVFormatContext* format, int index) {
     return ctx;
 }
 
-// Waits for a free buffer of the kind; null once the player stops.
-std::uint8_t* TakeBuffer(Decoder* d, std::vector<std::uint8_t*>& pool) {
+// Waits for a free buffer of the kind; null once the player stops. With a frame hold, video buffers are taken
+// oldest first (PRT-AVTEX).
+std::uint8_t* TakeBuffer(Decoder* d, std::vector<std::uint8_t*>& pool, bool video) {
     std::unique_lock lk(d->mutex);
     d->cv.wait(lk, [&] { return d->stop || !pool.empty(); });
     if (d->stop) return nullptr;
-    auto* buffer = pool.back();
-    pool.pop_back();
+    std::uint8_t* buffer;
+    if (video && d->hold != 0) {
+        buffer = pool.front();
+        pool.erase(pool.begin());
+    } else {
+        buffer = pool.back();
+        pool.pop_back();
+    }
+    if (video) {
+        const auto now = std::chrono::steady_clock::now();
+        for (const auto& r : d->releasedAt) {
+            if (r.first != buffer) continue;
+            const auto since = now - r.second;
+            if (since < std::chrono::milliseconds(20)) ++d->statRewrite20;
+            if (since < std::chrono::milliseconds(50)) ++d->statRewrite50;
+            break;
+        }
+    }
     return buffer;
 }
 
@@ -598,7 +772,7 @@ bool DecodePacket(Decoder* d, AVCodecContext* codec, const AVPacket* packet, boo
         if (video) d->statDecodeUs += MicrosSince(start);
         auto& pool = video ? d->freeVideo : d->freeAudio;
         const auto waitStart = std::chrono::steady_clock::now();
-        std::uint8_t* buffer = TakeBuffer(d, pool);
+        std::uint8_t* buffer = TakeBuffer(d, pool, video);
         if (video) d->statWaitUs += MicrosSince(waitStart);
         if (buffer == nullptr) { keepGoing = false; break; }
         Frame out;
@@ -608,11 +782,14 @@ bool DecodePacket(Decoder* d, AVCodecContext* codec, const AVPacket* packet, boo
         bool ok;
         if (video) {
             const auto storeStart = std::chrono::steady_clock::now();
+            if (AvpInvalidate()) GpuInvalidate(buffer, d->frameBytes); // PRT-AVTEX
+            d->avaVideoCores.fetch_or(CoreBit(), std::memory_order_relaxed);
             ok = StoreVideo(d, *frame, buffer);
             d->statStoreUs += MicrosSince(storeStart);
             ++d->statFrames;
             out.bytes = static_cast<std::uint32_t>(d->frameBytes);
         } else {
+            d->avaAudioCores.fetch_or(CoreBit(), std::memory_order_relaxed);
             out.bytes = StoreAudio(d, *frame, buffer);
             ok = out.bytes != 0;
         }
@@ -711,6 +888,39 @@ void* APS5_VABI ReaderThread(void* arg) {
                          static_cast<unsigned long long>(d->statMissed.exchange(0)),
                          static_cast<long long>(d->statDriftMs.load()),
                          static_cast<unsigned long long>(d->statSnaps.exchange(0)));
+            // PRT-AVTEX: renderer uploads of the frame buffers (luma: uploads starting at a buffer, one per shown
+            // frame expected; all: every texture over them) and write faults on them, against the takes above.
+            {
+                std::uint64_t luma = 0, all = 0, faults = 0;
+                const bool have = GpuAvTexStats(luma, all, faults);
+                std::size_t held, freeCount, queued;
+                std::uint64_t r20, r50;
+                {
+                    std::lock_guard lk(d->mutex);
+                    held = d->heldVideo.size();
+                    freeCount = d->freeVideo.size();
+                    queued = d->video.size();
+                    r20 = d->statRewrite20;
+                    r50 = d->statRewrite50;
+                    d->statRewrite20 = d->statRewrite50 = 0;
+                }
+                if (have)
+                    std::fprintf(stderr, "[AVP] PRT-AVTEX 2 s: renderer uploads %llu luma, %llu all, %llu write faults; "
+                                 "hold %u: %zu held, %zu free, %zu queued; %llu buffers rewritten within 20 ms of "
+                                 "being shown, %llu within 50 ms\n",
+                                 static_cast<unsigned long long>(luma - d->texLuma),
+                                 static_cast<unsigned long long>(all - d->texAll),
+                                 static_cast<unsigned long long>(faults - d->texFaults), d->hold, held, freeCount,
+                                 queued, static_cast<unsigned long long>(r20), static_cast<unsigned long long>(r50));
+                else
+                    std::fprintf(stderr, "[AVP] PRT-AVTEX 2 s: renderer counters n/a; hold %u: %zu held, %zu free, "
+                                 "%zu queued; %llu buffers rewritten within 20 ms of being shown, %llu within 50 ms\n",
+                                 d->hold, held, freeCount, queued, static_cast<unsigned long long>(r20),
+                                 static_cast<unsigned long long>(r50));
+                d->texLuma = luma;
+                d->texAll = all;
+                d->texFaults = faults;
+            }
             d->statDecodeUs = d->statStoreUs = d->statWaitUs = d->statFrames = 0;
             d->statSince = std::chrono::steady_clock::now();
         }
@@ -759,6 +969,16 @@ bool StartDecoder(Player* p, Decoder* d) {
             d->freeVideo.push_back(buffer);
         }
         if (d->allVideo.size() < 2) return false;
+        // PRT-AVTEX: hold at most count - 3 (one shown, two to decode into).
+        const std::uint32_t room = d->allVideo.size() > 3 ? static_cast<std::uint32_t>(d->allVideo.size() - 3) : 0u;
+        d->hold = std::min(AvpHold(), room);
+        std::uint64_t luma = 0, all = 0, faults = 0;
+        if (GpuAvTexStats(luma, all, faults)) {
+            d->texLuma = luma;
+            d->texAll = all;
+            d->texFaults = faults;
+        }
+        for (auto* buffer : d->allVideo) GpuAvTexRange(buffer, d->frameBytes, true);
     }
     if (d->audioCodec != nullptr && p->alloc != nullptr) {
         for (unsigned i = 0; i < 32; ++i) {
@@ -787,9 +1007,10 @@ bool StartDecoder(Player* p, Decoder* d) {
         if (d->audioThread.joinable()) d->audioThread.join();
         return false;
     }
-    std::fprintf(stderr, "[AVP] decoding '%s': %ux%u video%s, %u Hz x%u audio%s, %llu ms, %zu frame buffers\n",
+    std::fprintf(stderr, "[AVP] decoding '%s': %ux%u video%s, %u Hz x%u audio%s, %llu ms, %zu frame buffers, hold %u\n",
                  p->path.c_str(), d->width, d->height, d->videoCodec ? "" : " (off)", d->sampleRate, d->channels,
-                 d->audioCodec ? "" : " (off)", static_cast<unsigned long long>(d->durationMs), d->allVideo.size());
+                 d->audioCodec ? "" : " (off)", static_cast<unsigned long long>(d->durationMs), d->allVideo.size(),
+                 d->hold);
     std::fflush(stderr);
     return true;
 }
@@ -807,6 +1028,8 @@ void DestroyDecoder(Player* p, Decoder* d) {
     if (d->audioThread.joinable()) d->audioThread.join();
     for (auto& item : d->videoPackets) av_packet_free(&item.packet);
     for (auto& item : d->audioPackets) av_packet_free(&item.packet);
+    if (d->avaPulls != 0) LogAudioStart(*d, "stopped before 5 s");
+    for (auto* buffer : d->allVideo) GpuAvTexRange(buffer, d->frameBytes, false); // PRT-AVTEX
     FreeDecoderMedia(d);
     if (p->deallocTexture != nullptr)
         for (auto* buffer : d->allVideo) p->deallocTexture(p->memObject, buffer);
@@ -929,7 +1152,7 @@ bool DeliverDecodedFrame(Player& p, void*& data, std::uint64_t& timestamp) {
         next = d->video.front();
         d->video.pop_front();
     }
-    if (d->haveCurrentVideo) d->freeVideo.push_back(d->currentVideo.data);
+    if (d->haveCurrentVideo) ReleaseShown(*d, d->currentVideo.data); // PRT-AVTEX hold
     d->currentVideo = next;
     d->haveCurrentVideo = true;
     ++d->statDelivered;
@@ -1055,12 +1278,43 @@ void BeginPlayback(Player* p) {
         std::lock_guard g(p->lock);
         d = p->decoder;
     }
-    if (d != nullptr && d->thread == nullptr && !StartDecoder(p, d)) {
+    if (d == nullptr || d->thread != nullptr) return;
+    if (!StartDecoder(p, d)) {
         std::fprintf(stderr, "[AVP] could not start decoding '%s'; playing a blank clip\n", p->path.c_str());
         DestroyDecoder(p, d);
         std::lock_guard g(p->lock);
         p->decoder = nullptr;
+        return;
     }
+    // PRT-AVAUDIO prefill: decoded audio waits for the title from its first pull, and the clock starts after it.
+    if (const std::uint32_t prefill = AvpPrefillMs(); prefill != 0) {
+        const auto t0 = std::chrono::steady_clock::now();
+        std::uint64_t audioMs = 0;
+        std::size_t pictures = 0;
+        bool ready;
+        {
+            std::unique_lock lk(d->mutex);
+            ready = d->cv.wait_for(lk, std::chrono::milliseconds(500), [&] {
+                return d->stop || d->eof || d->failed ||
+                       ((d->audioCodec == nullptr || QueuedAudioMs(*d) >= prefill) &&
+                        (d->videoCodec == nullptr || !d->video.empty()));
+            });
+            audioMs = QueuedAudioMs(*d);
+            pictures = d->video.size();
+        }
+        {
+            std::lock_guard g(p->lock);
+            p->bankedMs = 0;
+            p->clockAnchor = {};
+        }
+        std::fprintf(stderr, "[AVP] PRT-AVAUDIO: prefill %s in %lld ms: %llu ms of audio, %zu pictures\n",
+                     ready ? "done" : "timed out",
+                     static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                std::chrono::steady_clock::now() - t0).count()),
+                     static_cast<unsigned long long>(audioMs), pictures);
+    }
+    std::lock_guard lk(d->mutex);
+    d->avaStart = std::chrono::steady_clock::now();
 }
 
 int AddSourceCommon(Player* p, const char* path) {
@@ -1470,6 +1724,7 @@ Bool APS5_VABI sceAvPlayerGetAudioData(void* h, void* audio_info) {
   Decoder* d = p->decoder;
   if (d != nullptr && p->playing && !p->paused && audio_info != nullptr) {
    std::lock_guard lk(d->mutex);
+   if (d->audio.empty()) NoteAudioPull(*d, false); // PRT-AVAUDIO
    if (!d->audio.empty()) {
     if (d->haveCurrentAudio) d->freeAudio.push_back(d->currentAudio.data);
     d->currentAudio = d->audio.front();
@@ -1478,6 +1733,7 @@ Bool APS5_VABI sceAvPlayerGetAudioData(void* h, void* audio_info) {
     d->audioClock = true;
     d->audioTs = d->currentAudio.timestamp;
     d->audioAt = std::chrono::steady_clock::now();
+    NoteAudioPull(*d, true); // PRT-AVAUDIO
     d->cv.notify_all();
     FrameInfo out = {};
     out.data = d->currentAudio.data;

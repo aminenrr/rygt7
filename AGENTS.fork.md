@@ -232,7 +232,7 @@ cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder bu
   60 fps, title takes 120 frames per 2 s, flips 60/60, submit-to-flip 18 to 50 ms, queued up to 3, yet
   the owner still sees skips. New report: audio crack/stutter only at the video start, on b0 AND
   b1, so not AVSYNC; most likely old. GT Auto: no aliasing, UI still not steady.
-- **Build B3 plan (2026-11-19, handed to the other agent; not built yet; owner OK needed):**
+- **Build B3 plan (2026-11-19; built, see Build B3 below):**
   (1) AvPlayer frame hold `RYGT_AVP_HOLD=3`: a used frame buffer is not reused for 3 more takes
   (lead: at 60 fps the decoder overwrites a buffer the GPU still reads). (2) Forced upload: mark the
   decoder's guest range dirty on write so the texture cache re-uploads it the same frame. (3) Log
@@ -240,6 +240,25 @@ cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder bu
   video clock starts. (5) Log PRT-AVAUDIO: short/empty audio pulls in the first 5 s + audio vs
   decode thread cores. (6) `RYGT_DLSS_JITTER_SCALE=2` A/B (off) + log of the game's projection
   offset vs jitter passed to DLSS. Bats: b0 = 1 to 5 on, b1 = b0 + jitter x2, b2 = all off.
+- **Build B3 (owner go 2026-11-19 15:35 GMT; on Build B2): built, shadgt7 `e78f9528` + rygt7 (this commit).**
+  Findings: AvPlayer's free frame pool was LIFO and the decoder waits ~1.7 s of every 2 s for a buffer, so
+  the buffer released at a take was the next one overwritten (~2 ms later) while the recorder could still
+  upload it for a queued frame. The native path already re-uploads on write faults (`OnCpuWrite`). A jitter
+  scale switch already existed: `RYGT_DLSS_TEMPORAL_JITTER=x,y` (ryty_dlssg.cpp). b0 PRT-JITTER showed 5 to
+  10 history resets per 600 GT Auto frames.
+  - rygt7 `libSceAvPlayer.native/Export.cpp`: `RYGT_AVP_HOLD=N` (off): shown buffers held N more takes
+    (`ReleaseShown`, `heldVideo`), free pool taken oldest first, N capped at buffers minus 3.
+    `RYGT_AVP_INVALIDATE=1` (off): `RytyGpuInvalidateMemory` before `StoreVideo`. `RYGT_AVP_PREFILL_MS=N`
+    (off, max 400): `BeginPlayback` waits (500 ms cap) for N ms of audio + 1 picture, then restarts the clock.
+  - Logs (always on, log only): `[AVP] PRT-AVTEX 2 s:` renderer uploads (luma = at a buffer start, all),
+    write faults, held/free/queued, buffers rewritten within 20/50 ms of being shown. `[AVP] PRT-AVAUDIO`
+    once 5 s after start: pulls, empty pulls, lowest queued ms, pull gaps > 30 ms, first pull delay,
+    timestamp jumps/repeats, cores (title puller, audio decoder, video decoder); prefill line.
+  - shadgt7 `e78f9528`: exports `RytyGpuAvTexRange` / `RytyGpuAvTexStats` (image_registry.cpp counters,
+    upload hook + `OnCpuWrite`); PRT-JITTER v2 line: raw c20/c21 range, jitter x2 span, pattern period,
+    reset causes by frame gap, last refuse reason; switch entries for the 3 AvPlayer switches.
+  - Bats: b0 hold 3 + invalidate + prefill 100; b1 = b0 + `RYGT_DLSS_TEMPORAL_JITTER=2,2` (also races);
+    b2 none (control).
 - **Build B (shadgt7 `64deefc0`, `56139d6d`, `54ab0de3`, 2026-11-19, owner go 00:56 GMT; on Build C):**
   - PRT-GTAUTO2 `RYGT_HD_RACE_NO_READBACK` (on, =0 old): with HD UI the race HUD flag is never set
     (`hud_depth_drawn` needs `HudSplitOn()`, off under HD UI), so `HdRace()` took GT Auto's 3D car
@@ -308,6 +327,8 @@ default, CI run, test result.
 | planned | shadgt7 | - | dynamic topology (prim_type out of the key), from Build B PRT-KEEP field tally | - | - | - |
 | 2026-11-19 | rygt7 | c976977 | Build B2: PRT-AVSYNC AvPlayer video clock slews to audio (max 25% rate), snap only past 500 ms, late drop 50 to 100 ms, drift + snaps in the AVP 2 s line (`RYGT_AVP_SMOOTH_CLOCK`) | on (=0 off) | 44537997225 green (artifact 14541255275) | tested 2026-11-19: works, 0 to 1 late per 2 s, drift under 6 ms, 0 snaps (off: 3 to 6 late + 1 to 2 snaps). Keep on. Cutscene still skips visibly (cause elsewhere, see Build B3 plan) |
 | 2026-11-19 | shadgt7 | fb672cb | Build B2: `RYGT_BINK_30HZ` now off by default (=1 on); PRT-JITTER log every 600 menu temporal frames (`RYGT_PRT_JITTER`) | BINK30 off, JITTER on | 44537997225 green (artifact 14541255275) | tested 2026-11-19: world map back to 60; GT Auto jitter x/y about -0.25..+0.25 px, 0 zero/repeated, 0 to 1 resets per 600 (maybe half scale vs DLSS +-0.5) |
+| 2026-11-19 | shadgt7 | e78f9528 | Build B3: PRT-AVTEX AvPlayer buffer upload/fault counters (exports), PRT-JITTER v2 (raw offsets, period, reset causes), RYGT_AVP_* switch entries | log only | pending | pending |
+| 2026-11-19 | rygt7 | (this commit) | Build B3: AvPlayer frame hold + FIFO pool (`RYGT_AVP_HOLD`), invalidate before write (`RYGT_AVP_INVALIDATE`), audio prefill (`RYGT_AVP_PREFILL_MS`), PRT-AVTEX / PRT-AVAUDIO logs | off (logs on) | pending | pending |
 | planned | shadgt7 | - | not-buildable prewarm records, from Build B PRT-PREWARM split | - | - | - |
 | planned | shadgt7 | - | tess batching, from Build B PRT-TESS lines | - | - | - |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
