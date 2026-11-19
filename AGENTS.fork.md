@@ -249,6 +249,18 @@ cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder bu
   - PRT-TESS (log only, rides `RYGT_PERF_LINE`): why tessellated draws find no pipeline key
     (unsupported / no program / hull constants / not translated / geometry), every 10 s. Tess
     batching itself is next, from these numbers.
+- **Next build candidates (after the owner tests Build B; pick from its log lines, owner decides):**
+  - Dynamic topology: primitive type is baked into the pipeline, so the same shaders drawn as list
+    vs strip/fan are two pipelines (11 of 20 PRT-KEEP misses touch byte 372). Make topology dynamic
+    state (VK 1.3 / EDS1) and drop it from the key for list/strip/fan; RectList/QuadList keep
+    their own path. Touches the native draw path, own switch. Go if PRT-KEEP field tally still
+    shows prim_type high.
+  - Not-buildable prewarm records: 936 of 15137 records skipped in the warm log, built at runtime
+    (stutter). Fix depends on the largest bucket in Build B's PRT-PREWARM split (colour targets,
+    geometry, no vertex, stage/shader missing from the store).
+  - Tess batching: FIX-227 LDS barrier runs are short (2 to 17 draws per run on average, up to
+    ~144k draws per window). Batch more draws per barrier or drop unneeded barriers. First fix
+    whatever PRT-TESS shows as skipped draws.
 
 ## Fix log (keep this up to date)
 Every new commit on either `pr-tests` branch gets a line here: date, repo, commit, fix or switch,
@@ -273,7 +285,9 @@ default, CI run, test result.
 | 2026-11-19 | shadgt7 | 64deefc0 | Build B: PRT-GTAUTO2 GT Auto not an HD race when the display is read back (`RYGT_HD_RACE_NO_READBACK`) | on (=0 off) | pending | pending owner test |
 | 2026-11-19 | shadgt7 | 56139d6d | Build B: PRT-BINK30 flips locked to 30 while Bink decodes (`RYGT_BINK_30HZ`) | on (=0 off) | pending | pending owner test |
 | 2026-11-19 | shadgt7 | 54ab0de3 | Build B: PRT-KEYNORM key normalise + field-named PRT-KEEP (`RYGT_PIPELINE_KEY_NORMALIZE`), PRT-TESS skip reasons (log) | on (=0 off) | pending | pending owner test |
-| planned | shadgt7 | - | tess batching / dynamic topology, from Build B's PRT-TESS and PRT-KEEP lines | - | - | - |
+| planned | shadgt7 | - | dynamic topology (prim_type out of the key), from Build B PRT-KEEP field tally | - | - | - |
+| planned | shadgt7 | - | not-buildable prewarm records, from Build B PRT-PREWARM split | - | - | - |
+| planned | shadgt7 | - | tess batching, from Build B PRT-TESS lines | - | - | - |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
 
 - Untouched: trophies upstream PRs (RyGT-Team/shadgt7#54, rygt7#58, open).
