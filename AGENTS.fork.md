@@ -282,9 +282,9 @@ default, CI run, test result.
 | 2026-11-17 | shadgt7 | c54af2d0 | PRT-PERF-A: PRT-ECORE driver compiles on E-cores (`RYGT_ECORE_DRIVER_COMPILE`), PRT-SAMPLER sampler dedupe + coarse stand-in (`RYGT_SAMPLER_DEDUPE`), PRT-PERF 10 s GPU/CPU line (`RYGT_PERF_LINE`) | on (=0 off) | 44193422305 green | pending |
 | 2026-11-18 | shadgt7 | ff9c84d7 | PRT-LATE HD UI proxy scales right after its composite (`RYGT_HD_UI_LATE_TEMPORAL`), HD race hold (`RYGT_HD_RACE_HOLD`, 30), PRT-BINK cutscene diagnostic (`RYGT_DIAG_BINK=1`) | on (=0 off); BINK off | 44391891394 green | pending |
 | 2026-11-18 | shadgt7 | f0c493f9 | Build C: PRT-GTAUTO GT Auto to presenter DLSS (`RYGT_HD_UI_LATE_GIVE_UP`), G1 `RYGT_HD_UI_LATE_SKIP_EARLY`, G2 `RYGT_HD_UI_OWN_VIEWPORT`; PRT-VRAM `RYGT_DLSS_VRAM_RESERVE` 384, `RYGT_DLSS_FREE_SIDE`, `RYGT_DLSS_RETRY_CALLS` 120; PRT-PERF VRAM | G3/V on (=0 off); G1/G2 off | CI 44418528531 green (artifact 14481664715) | pending owner test |
-| 2026-11-19 | shadgt7 | 64deefc0 | Build B: PRT-GTAUTO2 GT Auto not an HD race when the display is read back (`RYGT_HD_RACE_NO_READBACK`) | on (=0 off) | pending | pending owner test |
-| 2026-11-19 | shadgt7 | 56139d6d | Build B: PRT-BINK30 flips locked to 30 while Bink decodes (`RYGT_BINK_30HZ`) | on (=0 off) | pending | pending owner test |
-| 2026-11-19 | shadgt7 | 54ab0de3 | Build B: PRT-KEYNORM key normalise + field-named PRT-KEEP (`RYGT_PIPELINE_KEY_NORMALIZE`), PRT-TESS skip reasons (log) | on (=0 off) | pending | pending owner test |
+| 2026-11-19 | shadgt7 | 64deefc0 | Build B: PRT-GTAUTO2 GT Auto not an HD race when the display is read back (`RYGT_HD_RACE_NO_READBACK`) | on (=0 off) | 44434285472 green (artifact 14490302887) | pending owner test |
+| 2026-11-19 | shadgt7 | 56139d6d | Build B: PRT-BINK30 flips locked to 30 while Bink decodes (`RYGT_BINK_30HZ`) | on (=0 off) | 44434285472 green (artifact 14490302887) | pending owner test |
+| 2026-11-19 | shadgt7 | 54ab0de3 | Build B: PRT-KEYNORM key normalise + field-named PRT-KEEP (`RYGT_PIPELINE_KEY_NORMALIZE`), PRT-TESS skip reasons (log) | on (=0 off) | 44434285472 green (artifact 14490302887) | pending owner test |
 | planned | shadgt7 | - | dynamic topology (prim_type out of the key), from Build B PRT-KEEP field tally | - | - | - |
 | planned | shadgt7 | - | not-buildable prewarm records, from Build B PRT-PREWARM split | - | - | - |
 | planned | shadgt7 | - | tess batching, from Build B PRT-TESS lines | - | - | - |
