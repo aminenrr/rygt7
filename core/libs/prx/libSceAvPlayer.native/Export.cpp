@@ -256,6 +256,13 @@ struct Decoder {
     std::uint64_t avaLastTs = 0, avaLastDurMs = 0;
     bool avaHaveLast = false;
     std::uint64_t avaPullerCores = 0;
+    // PRT-AVAUDIO v2 (Build B4): when each pull gap over 30 ms came and how long it was (first 16), and the
+    // first block handed out.
+    std::string avaGapList;
+    unsigned avaGapListed = 0;
+    std::int64_t avaFirstTs = -1, avaFirstDurMs = -1;
+    // PRT-AVFADE (Build B4): samples per channel already faded in at the start of the stream.
+    std::uint64_t fadeDone = 0;
     std::atomic<std::uint64_t> avaVideoCores{0}, avaAudioCores{0};
 };
 
@@ -380,6 +387,18 @@ bool AvpInvalidate() {
 }
 // RYGT_AVP_PREFILL_MS=N: Start waits (at most 500 ms) until N ms of audio and a picture are decoded, and the
 // clock starts after that.
+// RYGT_AVP_AUDIO_FADEIN_MS=N (PRT-AVFADE, Build B4, off): the first N ms of a cutscene's sound rise from
+// silence, against the crack at its start.
+std::uint32_t AvpFadeInMs() {
+    static const std::uint32_t n = [] {
+        const char* env = std::getenv("RYGT_AVP_AUDIO_FADEIN_MS");
+        const int v = env ? std::atoi(env) : 0;
+        const auto r = static_cast<std::uint32_t>(std::clamp(v, 0, 200));
+        std::fprintf(stderr, "[AVP] PRT-AVFADE: audio fade-in %u ms (RYGT_AVP_AUDIO_FADEIN_MS)\n", r);
+        return r;
+    }();
+    return n;
+}
 std::uint32_t AvpPrefillMs() {
     static const std::uint32_t n = [] {
         const char* env = std::getenv("RYGT_AVP_PREFILL_MS");
@@ -458,6 +477,10 @@ void LogAudioStart(Decoder& d, const char* why) {
                  static_cast<unsigned long long>(d.avaRepeats), static_cast<unsigned long long>(d.avaPullerCores),
                  static_cast<unsigned long long>(d.avaAudioCores.load()),
                  static_cast<unsigned long long>(d.avaVideoCores.load()));
+    std::fprintf(stderr, "[AVP] PRT-AVAUDIO v2: first block %lld ms long at timestamp %lld ms; gaps over 30 ms "
+                 "(ms after start: length):%s\n",
+                 static_cast<long long>(d.avaFirstDurMs), static_cast<long long>(d.avaFirstTs),
+                 d.avaGapList.empty() ? " none" : d.avaGapList.c_str());
     std::fflush(stderr);
 }
 
@@ -471,8 +494,18 @@ void NoteAudioPull(Decoder& d, bool got) {
     }
     if (d.avaPulls == 0)
         d.avaFirstPullMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - d.avaStart).count();
-    else if (now - d.avaLastPull > std::chrono::milliseconds(30))
+    else if (now - d.avaLastPull > std::chrono::milliseconds(30)) {
         ++d.avaGaps;
+        if (d.avaGapListed++ < 16) {
+            char text[64];
+            std::snprintf(text, sizeof(text), " %lld: %lld",
+                          static_cast<long long>(
+                              std::chrono::duration_cast<std::chrono::milliseconds>(now - d.avaStart).count()),
+                          static_cast<long long>(
+                              std::chrono::duration_cast<std::chrono::milliseconds>(now - d.avaLastPull).count()));
+            d.avaGapList += text;
+        }
+    }
     d.avaLastPull = now;
     ++d.avaPulls;
     d.avaPullerCores |= CoreBit();
@@ -488,6 +521,10 @@ void NoteAudioPull(Decoder& d, bool got) {
     if (d.avaHaveLast) {
         if (ts <= d.avaLastTs) ++d.avaRepeats;
         else if (ts > d.avaLastTs + d.avaLastDurMs + 5) ++d.avaJumps;
+    }
+    if (d.avaFirstTs < 0) {
+        d.avaFirstTs = static_cast<std::int64_t>(ts);
+        d.avaFirstDurMs = static_cast<std::int64_t>(dur);
     }
     d.avaLastTs = ts;
     d.avaLastDurMs = dur;
@@ -792,6 +829,22 @@ bool DecodePacket(Decoder* d, AVCodecContext* codec, const AVPacket* packet, boo
             d->avaAudioCores.fetch_or(CoreBit(), std::memory_order_relaxed);
             out.bytes = StoreAudio(d, *frame, buffer);
             ok = out.bytes != 0;
+            // PRT-AVFADE: a linear rise over the first N ms of the stream's sound.
+            if (const std::uint32_t fadeMs = AvpFadeInMs(); ok && fadeMs != 0 && d->channels > 0) {
+                const std::uint64_t fadeSamples = static_cast<std::uint64_t>(d->sampleRate) * fadeMs / 1000u;
+                if (d->fadeDone < fadeSamples) {
+                    auto* pcm = reinterpret_cast<std::int16_t*>(buffer);
+                    const std::uint64_t ch = d->channels;
+                    const std::uint64_t perChannel = out.bytes / (2u * ch);
+                    for (std::uint64_t i = 0; i < perChannel && d->fadeDone < fadeSamples; ++i, ++d->fadeDone) {
+                        const float gain = static_cast<float>(d->fadeDone) / static_cast<float>(fadeSamples);
+                        for (std::uint64_t c = 0; c < ch; ++c) {
+                            auto& v = pcm[i * ch + c];
+                            v = static_cast<std::int16_t>(static_cast<float>(v) * gain);
+                        }
+                    }
+                }
+            }
         }
         std::lock_guard lk(d->mutex);
         if (!ok) {

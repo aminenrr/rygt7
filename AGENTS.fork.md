@@ -259,6 +259,28 @@ cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder bu
     reset causes by frame gap, last refuse reason; switch entries for the 3 AvPlayer switches.
   - Bats: b0 hold 3 + invalidate + prefill 100; b1 = b0 + `RYGT_DLSS_TEMPORAL_JITTER=2,2` (also races);
     b2 none (control).
+- **Build B3 owner test (2026-11-19 17:43 GMT):** b0 cutscenes "99% perfect, no stutter" (AVTEX: 0 buffers
+  rewritten within 20 ms, title took 121 per 2 s). Audio crack at cutscene start remains: prefill done in 30 ms
+  with 682 ms queued, 0 empty pulls, lowest queued 618 ms, but 16 pull gaps over 30 ms in the first 5 s.
+  GT Auto aliasing unchanged with b1 (jitter x2), so jitter scale ruled out. Clips: GT Auto camera drifts
+  (normal, also on PS5) and edges stair-step and crawl while it moves; the still garage is clean. GT Auto has 4
+  to 14 history resets per 600 frames, nearly all after 1 frame without a temporal pass. Owner: remove the
+  watermark, old loggers off by default, both as launcher toggles.
+- **Build B4 (owner go 2026-11-19 17:59 GMT; on Build B3): shadgt7 `d9c5c52c` + rygt7 (this round).**
+  - shadgt7: PRT-LOGS `Common::VerboseLogs()` (common/diagnostics.h, `RYGT_LOG_VERBOSE=1`, off) gates the
+    per-pipeline build line (77% of stdout), NAT-041, DIAG-059 (x2), HDUI-TRACE, FIX-GT7-043, SHD-006 census and
+    the 2 s lines PERF-031, PERF-047, DIAG-118, readback pages, flips, deferred fences, mapping lookups, render
+    frame waits. Watermark only with `RYGT_WATERMARK=1` (ryty_entry.cpp BuildWatermark). `RYGT_PRT_JITTER` now
+    off (=1 on). PRT-GAP `RYGT_DLSS_GAP_NO_RESET=n` (off, 1 to 8): NoteTemporalDraw keeps DLSS history across
+    a gap of up to n frames without a temporal pass. Switch entries for all of these plus
+    `RYGT_AVP_AUDIO_FADEIN_MS`.
+  - rygt7: launcher About > Logging toggles "Verbose logs" and "Show the build watermark in game" (RyGT7.ini
+    `verbose_logs=`, `watermark=`, both off), set `RYGT_LOG_VERBOSE` / `RYGT_WATERMARK` for GT7.exe before the
+    Advanced page's variables. AvPlayer PRT-AVFADE `RYGT_AVP_AUDIO_FADEIN_MS=N` (off, max 200): linear fade-in of
+    the first N ms of a stream's sound. `[AVP] PRT-AVAUDIO v2` line: first block length/timestamp and each pull
+    gap over 30 ms (ms after start: length, first 16).
+  - Bats: b0 = B3 b0 + fade 20 + gap no-reset 2; b1 = b0 + `RYGT_DLSS_TEMPORAL_MVEC=-1,-1` (motion vectors
+    flipped, also races); b2 = b0 + `RYGT_DLSS_TEMPORAL_JITTER=-1,-1` (jitter flipped); b3 control.
 - **Build B (shadgt7 `64deefc0`, `56139d6d`, `54ab0de3`, 2026-11-19, owner go 00:56 GMT; on Build C):**
   - PRT-GTAUTO2 `RYGT_HD_RACE_NO_READBACK` (on, =0 old): with HD UI the race HUD flag is never set
     (`hud_depth_drawn` needs `HudSplitOn()`, off under HD UI), so `HdRace()` took GT Auto's 3D car
@@ -327,8 +349,10 @@ default, CI run, test result.
 | planned | shadgt7 | - | dynamic topology (prim_type out of the key), from Build B PRT-KEEP field tally | - | - | - |
 | 2026-11-19 | rygt7 | c976977 | Build B2: PRT-AVSYNC AvPlayer video clock slews to audio (max 25% rate), snap only past 500 ms, late drop 50 to 100 ms, drift + snaps in the AVP 2 s line (`RYGT_AVP_SMOOTH_CLOCK`) | on (=0 off) | 44537997225 green (artifact 14541255275) | tested 2026-11-19: works, 0 to 1 late per 2 s, drift under 6 ms, 0 snaps (off: 3 to 6 late + 1 to 2 snaps). Keep on. Cutscene still skips visibly (cause elsewhere, see Build B3 plan) |
 | 2026-11-19 | shadgt7 | fb672cb | Build B2: `RYGT_BINK_30HZ` now off by default (=1 on); PRT-JITTER log every 600 menu temporal frames (`RYGT_PRT_JITTER`) | BINK30 off, JITTER on | 44537997225 green (artifact 14541255275) | tested 2026-11-19: world map back to 60; GT Auto jitter x/y about -0.25..+0.25 px, 0 zero/repeated, 0 to 1 resets per 600 (maybe half scale vs DLSS +-0.5) |
-| 2026-11-19 | shadgt7 | e78f9528 | Build B3: PRT-AVTEX AvPlayer buffer upload/fault counters (exports), PRT-JITTER v2 (raw offsets, period, reset causes), RYGT_AVP_* switch entries | log only | CI 44557775316 green, artifact 14550303109 | owner test pending |
-| 2026-11-19 | rygt7 | fbd5498 | Build B3: AvPlayer frame hold + FIFO pool (`RYGT_AVP_HOLD`), invalidate before write (`RYGT_AVP_INVALIDATE`), audio prefill (`RYGT_AVP_PREFILL_MS`), PRT-AVTEX / PRT-AVAUDIO logs | off (logs on) | CI 44557775316 green, artifact 14550303109 | owner test pending |
+| 2026-11-19 | shadgt7 | e78f9528 | Build B3: PRT-AVTEX AvPlayer buffer upload/fault counters (exports), PRT-JITTER v2 (raw offsets, period, reset causes), RYGT_AVP_* switch entries | log only | CI 44557775316 green, artifact 14550303109 | tested 2026-11-19: jitter x2 no visible change (ruled out); resets after 1-frame gaps in GT Auto |
+| 2026-11-19 | rygt7 | fbd5498 | Build B3: AvPlayer frame hold + FIFO pool (`RYGT_AVP_HOLD`), invalidate before write (`RYGT_AVP_INVALIDATE`), audio prefill (`RYGT_AVP_PREFILL_MS`), PRT-AVTEX / PRT-AVAUDIO logs | off (logs on) | CI 44557775316 green, artifact 14550303109 | tested 2026-11-19: b0 cutscene video fixed (no stutter); audio crack at start remains |
+| 2026-11-19 | shadgt7 | d9c5c52c | Build B4: PRT-LOGS old log lines behind `RYGT_LOG_VERBOSE`, watermark only with `RYGT_WATERMARK=1`, PRT-JITTER off, PRT-GAP `RYGT_DLSS_GAP_NO_RESET`, switch entries | off | CI pending | owner test pending |
+| 2026-11-19 | rygt7 | (B4 code commit) | Build B4: launcher About > Logging toggles (verbose logs, watermark), AvPlayer fade-in `RYGT_AVP_AUDIO_FADEIN_MS`, PRT-AVAUDIO v2 gap list | off | CI pending | owner test pending |
 | planned | shadgt7 | - | not-buildable prewarm records, from Build B PRT-PREWARM split | - | - | - |
 | planned | shadgt7 | - | tess batching, from Build B PRT-TESS lines | - | - | - |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |

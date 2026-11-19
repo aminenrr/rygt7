@@ -1551,6 +1551,8 @@ namespace RyGT
         public string Game = "", Update = "", Modules = "", Fonts = "";
         public string StdoutLevel = "Warning";
         public bool ShowAdvanced = false;            // FEAT-GTS-254: the Advanced page in the sidebar (hidden by default)
+        public bool Watermark = false;               // PRT-LOGS (Build B4): RYGT_WATERMARK=1 for GT7.exe (off by default)
+        public bool VerboseLogs = false;             // PRT-LOGS (Build B4): RYGT_LOG_VERBOSE=1 for GT7.exe (off by default)
         public List<EnvVar> Env = new List<EnvVar>(); // FEAT-GTS-254: env= lines, set for GT7.exe
         readonly string path;
 
@@ -1575,13 +1577,16 @@ namespace RyGT
                 else if (key == "fonts") Fonts = value;
                 else if (key == "stdout_level") StdoutLevel = LogFiles.Levels[LogFiles.LevelIndex(value)];
                 else if (key == "show_advanced") ShowAdvanced = value == "1" || value.Equals("true", StringComparison.OrdinalIgnoreCase);
+                else if (key == "watermark") Watermark = value == "1" || value.Equals("true", StringComparison.OrdinalIgnoreCase);
+                else if (key == "verbose_logs") VerboseLogs = value == "1" || value.Equals("true", StringComparison.OrdinalIgnoreCase);
             }
         }
 
         public void Save()
         {
             var own = new List<string> { "game=" + Game, "update=" + Update, "modules=" + Modules, "fonts=" + Fonts, "stdout_level=" + StdoutLevel,
-                                         "show_advanced=" + (ShowAdvanced ? "1" : "0") };
+                                         "show_advanced=" + (ShowAdvanced ? "1" : "0"), "watermark=" + (Watermark ? "1" : "0"),
+                                         "verbose_logs=" + (VerboseLogs ? "1" : "0") };
             foreach (var entry in Env) own.Add("env=" + CustomEnvironment.Format(entry));
             File.WriteAllLines(path, own);
             // The runtime libraries read their log threshold, and (FEAT-GTS-251) the game and update
@@ -2505,6 +2510,25 @@ namespace RyGT
             };
             logging.Controls.Add(new SettingRow("stdout.log minimum level", logLevel));
             logging.Controls.Add(Hint("The selected level and below, from the next launch. Previous logs are kept with a timestamp."));
+            // PRT-LOGS (Build B4): the old routine log lines and the build watermark, both off by default.
+            var verboseLogs = new ToggleRow { Text = "Verbose logs (old diagnostic log lines)", Checked = settings.VerboseLogs };
+            verboseLogs.CheckedChanged += delegate
+            {
+                settings.VerboseLogs = verboseLogs.Checked;
+                try { settings.Save(); }
+                catch (Exception e) { MessageBox.Show(this, "Could not save the setting: " + e.Message); }
+            };
+            logging.Controls.Add(verboseLogs);
+            logging.Controls.Add(Hint("Every pipeline built and the old 2 s perf lines in stdout.log (RYGT_LOG_VERBOSE). Off keeps the log small."));
+            var watermark = new ToggleRow { Text = "Show the build watermark in game", Checked = settings.Watermark };
+            watermark.CheckedChanged += delegate
+            {
+                settings.Watermark = watermark.Checked;
+                try { settings.Save(); }
+                catch (Exception e) { MessageBox.Show(this, "Could not save the setting: " + e.Message); }
+            };
+            logging.Controls.Add(watermark);
+            logging.Controls.Add(Hint("The build and renderer revision in the bottom corner (RYGT_WATERMARK). From the next launch."));
 
             // FEAT-GTS-254 (from RyGTS FEAT-GTS-433..467): Advanced, the renderer's experimental RYGT_* and
             // SHADGT_* switches, read from libs\libSceVideoOut.prx with the renderer's own descriptions,
@@ -4256,8 +4280,12 @@ namespace RyGT
                         // FEAT-GT7-187: the trophy key (a temp file only this user reads) and the pop-up switch.
                         TrophyStore.DeleteKeyFile(root, trophyKeyFile);
                         trophyKeyFile = TrophyStore.ApplyEnvironment(root, start);
+                        // PRT-LOGS (Build B4): the About page's log and watermark toggles (the Advanced page can override).
+                        var launchSettings = new Settings(Path.Combine(root, "RyGT7.ini"));
+                        start.EnvironmentVariables["RYGT_LOG_VERBOSE"] = launchSettings.VerboseLogs ? "1" : "0";
+                        start.EnvironmentVariables["RYGT_WATERMARK"] = launchSettings.Watermark ? "1" : "0";
                         // FEAT-GTS-254: the Advanced page's switches and other variables last, so they win.
-                        int customCount = CustomEnvironment.Apply(start, new Settings(Path.Combine(root, "RyGT7.ini")).Env);
+                        int customCount = CustomEnvironment.Apply(start, launchSettings.Env);
                         if (customCount > 0) AppendSetupLog(root, customCount + " custom environment variable(s) applied.");
                         started = Process.Start(start);
                     }
