@@ -237,6 +237,9 @@ struct Decoder {
     // Statistics (logged every 2 s while playing).
     std::uint64_t statDecodeUs = 0, statStoreUs = 0, statWaitUs = 0, statFrames = 0;
     std::atomic<std::uint64_t> statDelivered{0}, statSkipped{0}, statMissed{0};
+    // PRT-AVSYNC: snaps of the video clock to audio and the last drift seen (video minus audio, ms).
+    std::atomic<std::uint64_t> statSnaps{0};
+    std::atomic<std::int64_t> statDriftMs{0};
     std::chrono::steady_clock::time_point statSince = std::chrono::steady_clock::now();
 };
 
@@ -320,6 +323,20 @@ void FireAsync(Player* p, std::int32_t event) {
     scePthreadDetach(thread);
 }
 
+// PRT-AVSYNC (pr-tests): RYGT_AVP_SMOOTH_CLOCK (on by default, =0 old behaviour). The video clock slews toward
+// the audio clock (at most 25% fast or slow) and only snaps past 500 ms of drift; frames are dropped only when
+// more than 100 ms late. The old clock snapped at 80 ms drift and dropped at 50 ms, which skipped 3 to 6 frames
+// every 2 s in 60 fps MP4 cutscenes.
+bool AvpSmoothClock() {
+    static const bool on = [] {
+        const char* env = std::getenv("RYGT_AVP_SMOOTH_CLOCK");
+        const bool v = !(env && env[0] == '0');
+        std::fprintf(stderr, "[AVP] PRT-AVSYNC: smooth clock %s (RYGT_AVP_SMOOTH_CLOCK)\n", v ? "on" : "off");
+        return v;
+    }();
+    return on;
+}
+
 // Caller holds the lock.
 std::uint64_t MediaTime(Player& p) {
     const auto now = std::chrono::steady_clock::now();
@@ -336,7 +353,28 @@ std::uint64_t MediaTime(Player& p) {
             if (p.clockAnchor != std::chrono::steady_clock::time_point{})
                 wall = static_cast<std::int64_t>(p.bankedMs) +
                        std::chrono::duration_cast<std::chrono::milliseconds>(now - p.clockAnchor).count();
-            if (wall < audio - 80 || wall > audio + 80) wall = audio;
+            if (AvpSmoothClock() && p.clockAnchor != std::chrono::steady_clock::time_point{}) {
+                // Rate-based slew: the clock runs at most 25% fast or slow toward audio, however often it is
+                // polled. The anchor only moves by whole ms so frequent polls lose no time.
+                const std::int64_t elapsed =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(now - p.clockAnchor).count();
+                wall = static_cast<std::int64_t>(p.bankedMs) + elapsed;
+                const std::int64_t drift = wall - audio;
+                d->statDriftMs.store(drift, std::memory_order_relaxed);
+                if (drift < -500 || drift > 500) {
+                    wall = audio;
+                    d->statSnaps.fetch_add(1, std::memory_order_relaxed);
+                } else {
+                    const std::int64_t cap = elapsed / 4;
+                    wall -= std::clamp<std::int64_t>(drift, -cap, cap);
+                }
+                p.bankedMs = static_cast<std::uint64_t>(std::max<std::int64_t>(wall, 0));
+                p.clockAnchor += std::chrono::milliseconds(elapsed);
+                return p.bankedMs;
+            } else if (wall < audio - 80 || wall > audio + 80) {
+                wall = audio;
+                d->statSnaps.fetch_add(1, std::memory_order_relaxed);
+            }
             p.bankedMs = static_cast<std::uint64_t>(std::max<std::int64_t>(wall, 0));
             p.clockAnchor = now;
             return p.bankedMs;
@@ -665,12 +703,14 @@ void* APS5_VABI ReaderThread(void* arg) {
             const double frames = static_cast<double>(std::max<std::uint64_t>(d->statFrames, 1));
             std::fprintf(stderr, "[AVP] 2 s: %llu frames decoded (decode %.1f ms, convert %.1f ms each), "
                          "video decoder waited %.0f ms for buffers; title took %llu, %llu skipped late, "
-                         "%llu polls found none due\n",
+                         "%llu polls found none due, audio drift %lld ms, %llu clock snaps\n",
                          static_cast<unsigned long long>(d->statFrames), d->statDecodeUs / frames / 1000.0,
                          d->statStoreUs / frames / 1000.0, d->statWaitUs / 1000.0,
                          static_cast<unsigned long long>(d->statDelivered.exchange(0)),
                          static_cast<unsigned long long>(d->statSkipped.exchange(0)),
-                         static_cast<unsigned long long>(d->statMissed.exchange(0)));
+                         static_cast<unsigned long long>(d->statMissed.exchange(0)),
+                         static_cast<long long>(d->statDriftMs.load()),
+                         static_cast<unsigned long long>(d->statSnaps.exchange(0)));
             d->statDecodeUs = d->statStoreUs = d->statWaitUs = d->statFrames = 0;
             d->statSince = std::chrono::steady_clock::now();
         }
@@ -882,7 +922,8 @@ bool DeliverDecodedFrame(Player& p, void*& data, std::uint64_t& timestamp) {
     // Each poll shows the oldest due frame; frames more than 50 ms late are dropped to catch up. (Always taking
     // the newest due frame dropped one whenever a poll came a little late.)
     d->video.pop_front();
-    while (!d->video.empty() && d->video.front().timestamp <= now && next.timestamp + 50 < now) {
+    const std::uint64_t lateMs = AvpSmoothClock() ? 100 : 50;
+    while (!d->video.empty() && d->video.front().timestamp <= now && next.timestamp + lateMs < now) {
         d->freeVideo.push_back(next.data);
         ++d->statSkipped;
         next = d->video.front();

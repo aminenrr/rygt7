@@ -220,6 +220,14 @@ cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder bu
   - V2 `RYGT_DLSS_FREE_SIDE` (on): slFreeResources on the side viewport after 600 idle calls.
   - V3 `RYGT_DLSS_RETRY_CALLS` (120): temporal retry after refusal (was 600, 3600 after 8).
   - V4 PRT-PERF line adds `VRAM used of budget MB`.
+- **Build B2 (2026-11-19, owner go 13:51 GMT; on Build B):** from the b0 log. (1) PRT-AVSYNC, rygt7
+  `libSceAvPlayer.native/Export.cpp`: championship cutscenes are AvPlayer MP4s (not Bink); MediaTime
+  snapped the video clock to audio past 80 ms and DeliverDecodedFrame dropped frames over 50 ms late
+  (3 to 6 skips per 2 s). Now a rate-based slew (at most 25% fast/slow, anchor moves by whole ms),
+  hard snap past 500 ms, drop past 100 ms. `RYGT_AVP_SMOOTH_CLOCK=0` = old. (2) `RYGT_BINK_30HZ` off by
+  default (world map's BinkT04 video locked the map to 30). (3) PRT-JITTER (log only, shadgt7 fb672cb):
+  jitter min/max, zero and repeated jitter frames, motion vector scale range, resets, every 600 menu
+  temporal frames, to tell why GT Auto is still aliased. Bats: b0-default, b1-avsync-off, b2-bink30-on.
 - **Build B (shadgt7 `64deefc0`, `56139d6d`, `54ab0de3`, 2026-11-19, owner go 00:56 GMT; on Build C):**
   - PRT-GTAUTO2 `RYGT_HD_RACE_NO_READBACK` (on, =0 old): with HD UI the race HUD flag is never set
     (`hud_depth_drawn` needs `HudSplitOn()`, off under HD UI), so `HdRace()` took GT Auto's 3D car
@@ -282,10 +290,12 @@ default, CI run, test result.
 | 2026-11-17 | shadgt7 | c54af2d0 | PRT-PERF-A: PRT-ECORE driver compiles on E-cores (`RYGT_ECORE_DRIVER_COMPILE`), PRT-SAMPLER sampler dedupe + coarse stand-in (`RYGT_SAMPLER_DEDUPE`), PRT-PERF 10 s GPU/CPU line (`RYGT_PERF_LINE`) | on (=0 off) | 44193422305 green | pending |
 | 2026-11-18 | shadgt7 | ff9c84d7 | PRT-LATE HD UI proxy scales right after its composite (`RYGT_HD_UI_LATE_TEMPORAL`), HD race hold (`RYGT_HD_RACE_HOLD`, 30), PRT-BINK cutscene diagnostic (`RYGT_DIAG_BINK=1`) | on (=0 off); BINK off | 44391891394 green | pending |
 | 2026-11-18 | shadgt7 | f0c493f9 | Build C: PRT-GTAUTO GT Auto to presenter DLSS (`RYGT_HD_UI_LATE_GIVE_UP`), G1 `RYGT_HD_UI_LATE_SKIP_EARLY`, G2 `RYGT_HD_UI_OWN_VIEWPORT`; PRT-VRAM `RYGT_DLSS_VRAM_RESERVE` 384, `RYGT_DLSS_FREE_SIDE`, `RYGT_DLSS_RETRY_CALLS` 120; PRT-PERF VRAM | G3/V on (=0 off); G1/G2 off | CI 44418528531 green (artifact 14481664715) | pending owner test |
-| 2026-11-19 | shadgt7 | 64deefc0 | Build B: PRT-GTAUTO2 GT Auto not an HD race when the display is read back (`RYGT_HD_RACE_NO_READBACK`) | on (=0 off) | 44434285472 green (artifact 14490302887) | pending owner test |
-| 2026-11-19 | shadgt7 | 56139d6d | Build B: PRT-BINK30 flips locked to 30 while Bink decodes (`RYGT_BINK_30HZ`) | on (=0 off) | 44434285472 green (artifact 14490302887) | pending owner test |
+| 2026-11-19 | shadgt7 | 64deefc0 | Build B: PRT-GTAUTO2 GT Auto not an HD race when the display is read back (`RYGT_HD_RACE_NO_READBACK`) | on (=0 off) | 44434285472 green (artifact 14490302887) | b0 tested 2026-11-19: works (3835 frames refused, sharper); aliasing left inside temporal pass |
+| 2026-11-19 | shadgt7 | 56139d6d | Build B: PRT-BINK30 flips locked to 30 while Bink decodes (`RYGT_BINK_30HZ`) | on (=0 off) | 44434285472 green (artifact 14490302887) | b0 2026-11-19: wrong target (cutscenes are AvPlayer MP4; locked world map to 30), off in B2 |
 | 2026-11-19 | shadgt7 | 54ab0de3 | Build B: PRT-KEYNORM key normalise + field-named PRT-KEEP (`RYGT_PIPELINE_KEY_NORMALIZE`), PRT-TESS skip reasons (log) | on (=0 off) | 44434285472 green (artifact 14490302887) | pending owner test |
 | planned | shadgt7 | - | dynamic topology (prim_type out of the key), from Build B PRT-KEEP field tally | - | - | - |
+| 2026-11-19 | rygt7 | (this commit) | Build B2: PRT-AVSYNC AvPlayer video clock slews to audio (max 25% rate), snap only past 500 ms, late drop 50 to 100 ms, drift + snaps in the AVP 2 s line (`RYGT_AVP_SMOOTH_CLOCK`) | on (=0 off) | pending | pending owner test |
+| 2026-11-19 | shadgt7 | fb672cb | Build B2: `RYGT_BINK_30HZ` now off by default (=1 on); PRT-JITTER log every 600 menu temporal frames (`RYGT_PRT_JITTER`) | BINK30 off, JITTER on | pending | pending owner test |
 | planned | shadgt7 | - | not-buildable prewarm records, from Build B PRT-PREWARM split | - | - | - |
 | planned | shadgt7 | - | tess batching, from Build B PRT-TESS lines | - | - | - |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
