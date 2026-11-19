@@ -240,7 +240,7 @@ cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder bu
   video clock starts. (5) Log PRT-AVAUDIO: short/empty audio pulls in the first 5 s + audio vs
   decode thread cores. (6) `RYGT_DLSS_JITTER_SCALE=2` A/B (off) + log of the game's projection
   offset vs jitter passed to DLSS. Bats: b0 = 1 to 5 on, b1 = b0 + jitter x2, b2 = all off.
-- **Build B3 (owner go 2026-11-19 15:35 GMT; on Build B2): built, shadgt7 `e78f9528` + rygt7 (this commit).**
+- **Build B3 (owner go 2026-11-19 15:35 GMT; on Build B2): built, shadgt7 `e78f9528` + rygt7 `fbd5498`; CI 44557775316 green, artifact 14550303109.**
   Findings: AvPlayer's free frame pool was LIFO and the decoder waits ~1.7 s of every 2 s for a buffer, so
   the buffer released at a take was the next one overwritten (~2 ms later) while the recorder could still
   upload it for a queued frame. The native path already re-uploads on write faults (`OnCpuWrite`). A jitter
@@ -327,8 +327,8 @@ default, CI run, test result.
 | planned | shadgt7 | - | dynamic topology (prim_type out of the key), from Build B PRT-KEEP field tally | - | - | - |
 | 2026-11-19 | rygt7 | c976977 | Build B2: PRT-AVSYNC AvPlayer video clock slews to audio (max 25% rate), snap only past 500 ms, late drop 50 to 100 ms, drift + snaps in the AVP 2 s line (`RYGT_AVP_SMOOTH_CLOCK`) | on (=0 off) | 44537997225 green (artifact 14541255275) | tested 2026-11-19: works, 0 to 1 late per 2 s, drift under 6 ms, 0 snaps (off: 3 to 6 late + 1 to 2 snaps). Keep on. Cutscene still skips visibly (cause elsewhere, see Build B3 plan) |
 | 2026-11-19 | shadgt7 | fb672cb | Build B2: `RYGT_BINK_30HZ` now off by default (=1 on); PRT-JITTER log every 600 menu temporal frames (`RYGT_PRT_JITTER`) | BINK30 off, JITTER on | 44537997225 green (artifact 14541255275) | tested 2026-11-19: world map back to 60; GT Auto jitter x/y about -0.25..+0.25 px, 0 zero/repeated, 0 to 1 resets per 600 (maybe half scale vs DLSS +-0.5) |
-| 2026-11-19 | shadgt7 | e78f9528 | Build B3: PRT-AVTEX AvPlayer buffer upload/fault counters (exports), PRT-JITTER v2 (raw offsets, period, reset causes), RYGT_AVP_* switch entries | log only | pending | pending |
-| 2026-11-19 | rygt7 | (this commit) | Build B3: AvPlayer frame hold + FIFO pool (`RYGT_AVP_HOLD`), invalidate before write (`RYGT_AVP_INVALIDATE`), audio prefill (`RYGT_AVP_PREFILL_MS`), PRT-AVTEX / PRT-AVAUDIO logs | off (logs on) | pending | pending |
+| 2026-11-19 | shadgt7 | e78f9528 | Build B3: PRT-AVTEX AvPlayer buffer upload/fault counters (exports), PRT-JITTER v2 (raw offsets, period, reset causes), RYGT_AVP_* switch entries | log only | CI 44557775316 green, artifact 14550303109 | owner test pending |
+| 2026-11-19 | rygt7 | fbd5498 | Build B3: AvPlayer frame hold + FIFO pool (`RYGT_AVP_HOLD`), invalidate before write (`RYGT_AVP_INVALIDATE`), audio prefill (`RYGT_AVP_PREFILL_MS`), PRT-AVTEX / PRT-AVAUDIO logs | off (logs on) | CI 44557775316 green, artifact 14550303109 | owner test pending |
 | planned | shadgt7 | - | not-buildable prewarm records, from Build B PRT-PREWARM split | - | - | - |
 | planned | shadgt7 | - | tess batching, from Build B PRT-TESS lines | - | - | - |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
