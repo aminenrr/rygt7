@@ -294,8 +294,8 @@ default, CI run, test result.
 | 2026-11-19 | shadgt7 | 56139d6d | Build B: PRT-BINK30 flips locked to 30 while Bink decodes (`RYGT_BINK_30HZ`) | on (=0 off) | 44434285472 green (artifact 14490302887) | b0 2026-11-19: wrong target (cutscenes are AvPlayer MP4; locked world map to 30), off in B2 |
 | 2026-11-19 | shadgt7 | 54ab0de3 | Build B: PRT-KEYNORM key normalise + field-named PRT-KEEP (`RYGT_PIPELINE_KEY_NORMALIZE`), PRT-TESS skip reasons (log) | on (=0 off) | 44434285472 green (artifact 14490302887) | pending owner test |
 | planned | shadgt7 | - | dynamic topology (prim_type out of the key), from Build B PRT-KEEP field tally | - | - | - |
-| 2026-11-19 | rygt7 | (this commit) | Build B2: PRT-AVSYNC AvPlayer video clock slews to audio (max 25% rate), snap only past 500 ms, late drop 50 to 100 ms, drift + snaps in the AVP 2 s line (`RYGT_AVP_SMOOTH_CLOCK`) | on (=0 off) | pending | pending owner test |
-| 2026-11-19 | shadgt7 | fb672cb | Build B2: `RYGT_BINK_30HZ` now off by default (=1 on); PRT-JITTER log every 600 menu temporal frames (`RYGT_PRT_JITTER`) | BINK30 off, JITTER on | pending | pending owner test |
+| 2026-11-19 | rygt7 | c976977 | Build B2: PRT-AVSYNC AvPlayer video clock slews to audio (max 25% rate), snap only past 500 ms, late drop 50 to 100 ms, drift + snaps in the AVP 2 s line (`RYGT_AVP_SMOOTH_CLOCK`) | on (=0 off) | 44537997225 green (artifact 14541255275) | pending owner test |
+| 2026-11-19 | shadgt7 | fb672cb | Build B2: `RYGT_BINK_30HZ` now off by default (=1 on); PRT-JITTER log every 600 menu temporal frames (`RYGT_PRT_JITTER`) | BINK30 off, JITTER on | 44537997225 green (artifact 14541255275) | pending owner test |
 | planned | shadgt7 | - | not-buildable prewarm records, from Build B PRT-PREWARM split | - | - | - |
 | planned | shadgt7 | - | tess batching, from Build B PRT-TESS lines | - | - | - |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
