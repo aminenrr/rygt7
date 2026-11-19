@@ -220,9 +220,35 @@ cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder bu
   - V2 `RYGT_DLSS_FREE_SIDE` (on): slFreeResources on the side viewport after 600 idle calls.
   - V3 `RYGT_DLSS_RETRY_CALLS` (120): temporal retry after refusal (was 600, 3600 after 8).
   - V4 PRT-PERF line adds `VRAM used of budget MB`.
-- **Build B (from the owner's warm Build A log):** PRT-KEEP key near-miss fix; VRAM trim of
-  DLSS/HD UI proxies (budget 6342 MB); tess LDS barrier batching only if PRT-PERF shows GPU-bound;
-  fixes for anything Build A broke.
+- **Build B (shadgt7 `64deefc0`, `56139d6d`, `54ab0de3`, 2026-11-19, owner go 00:56 GMT; on Build C):**
+  - PRT-GTAUTO2 `RYGT_HD_RACE_NO_READBACK` (on, =0 old): with HD UI the race HUD flag is never set
+    (`hud_depth_drawn` needs `HudSplitOn()`, off under HD UI), so `HdRace()` took GT Auto's 3D car
+    for a race map. Owner logs (2026-11-18 race + GT Auto, 2026-11-19 GT Auto): every race frame
+    `read-back false`, every GT Auto frame `read-back true`. A display read-back in the last 30
+    frames now refuses the race sign; GT Auto takes the 3D menu path (MENU_TDLSS). Hold unchanged.
+    Log `PRT-GTAUTO2` every 600 frames while refusing (+ sign picture address/size/samples, backup
+    discriminator data); HDUI-SRC adds `PRT-GTAUTO2: N frames refused as race`.
+    Handoff's `RYGT_HD_RACE_NEEDS_HUD` renamed (owner OK): it would have refused every race.
+  - PRT-BINK30 `RYGT_BINK_30HZ` (on, =0 off): PERF-075 only raises the flip rate (guest vblank
+    events stay at 60; ReportFlipStats counts only flip-eligible ticks). Bink threads mark activity
+    from `LookupArea` (once per 64 lookups; BinkT00..02 seen there in owner logs); PresentThread
+    locks flips to 30 while the last mark is < 1 s old, switching on an even vblank; nothing when
+    the user's lock is <= 30. Log `PRT-BINK30: on (Bink thread X active, via ...)` / `off after N s`.
+    Risk: Bink menu background videos would hold 30 (visible in the log).
+  - PRT-KEYNORM `RYGT_PIPELINE_KEY_NORMALIZE` (on, =0 old key): key layout from the logs
+    (color_buffers @184, 12 B each; blend @280; write_masks @312; samples @352; mrt @364; bitfields
+    @368/@372; 376 B). The 22 PRT-KEEP near-misses are mostly baked state (cb0 format+swizzle,
+    blend0, sample counts, prim type @372): real different pipelines. Normalised: colour targets
+    past `num_color_attachments` (first pass fills every bound target, e.g. miss 14 = cb2/cb3
+    only) and BlendControl (alpha fields only with separate alpha, unnamed bits/disable_rop3
+    dropped). Loaded records normalised too, `PrewarmKeyLayout` stays 1 (no wipe). PRT-KEEP lines
+    now name fields; every-100 line tallies them; PRT-PREWARM splits "not buildable" (936 in the
+    warm log) by reason. Expect a modest drop only; the next lever is likely prim type (dynamic
+    topology) or the not-buildable records, decided from the new lines.
+    Note: DIAG-051 `padding` (2224 of 5250) = draws re-entering a pending async build, not dupes.
+  - PRT-TESS (log only, rides `RYGT_PERF_LINE`): why tessellated draws find no pipeline key
+    (unsupported / no program / hull constants / not translated / geometry), every 10 s. Tess
+    batching itself is next, from these numbers.
 
 ## Fix log (keep this up to date)
 Every new commit on either `pr-tests` branch gets a line here: date, repo, commit, fix or switch,
@@ -244,7 +270,10 @@ default, CI run, test result.
 | 2026-11-17 | shadgt7 | c54af2d0 | PRT-PERF-A: PRT-ECORE driver compiles on E-cores (`RYGT_ECORE_DRIVER_COMPILE`), PRT-SAMPLER sampler dedupe + coarse stand-in (`RYGT_SAMPLER_DEDUPE`), PRT-PERF 10 s GPU/CPU line (`RYGT_PERF_LINE`) | on (=0 off) | 44193422305 green | pending |
 | 2026-11-18 | shadgt7 | ff9c84d7 | PRT-LATE HD UI proxy scales right after its composite (`RYGT_HD_UI_LATE_TEMPORAL`), HD race hold (`RYGT_HD_RACE_HOLD`, 30), PRT-BINK cutscene diagnostic (`RYGT_DIAG_BINK=1`) | on (=0 off); BINK off | 44391891394 green | pending |
 | 2026-11-18 | shadgt7 | f0c493f9 | Build C: PRT-GTAUTO GT Auto to presenter DLSS (`RYGT_HD_UI_LATE_GIVE_UP`), G1 `RYGT_HD_UI_LATE_SKIP_EARLY`, G2 `RYGT_HD_UI_OWN_VIEWPORT`; PRT-VRAM `RYGT_DLSS_VRAM_RESERVE` 384, `RYGT_DLSS_FREE_SIDE`, `RYGT_DLSS_RETRY_CALLS` 120; PRT-PERF VRAM | G3/V on (=0 off); G1/G2 off | CI 44418528531 green (artifact 14481664715) | pending owner test |
-| planned | shadgt7 | - | Build B: PRT-KEEP key fix, VRAM trim, tess batching | on (=0 off) | - | - |
+| 2026-11-19 | shadgt7 | 64deefc0 | Build B: PRT-GTAUTO2 GT Auto not an HD race when the display is read back (`RYGT_HD_RACE_NO_READBACK`) | on (=0 off) | pending | pending owner test |
+| 2026-11-19 | shadgt7 | 56139d6d | Build B: PRT-BINK30 flips locked to 30 while Bink decodes (`RYGT_BINK_30HZ`) | on (=0 off) | pending | pending owner test |
+| 2026-11-19 | shadgt7 | 54ab0de3 | Build B: PRT-KEYNORM key normalise + field-named PRT-KEEP (`RYGT_PIPELINE_KEY_NORMALIZE`), PRT-TESS skip reasons (log) | on (=0 off) | pending | pending owner test |
+| planned | shadgt7 | - | tess batching / dynamic topology, from Build B's PRT-TESS and PRT-KEEP lines | - | - | - |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
 
 - Untouched: trophies upstream PRs (RyGT-Team/shadgt7#54, rygt7#58, open).
