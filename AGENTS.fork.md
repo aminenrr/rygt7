@@ -266,7 +266,7 @@ cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder bu
   (normal, also on PS5) and edges stair-step and crawl while it moves; the still garage is clean. GT Auto has 4
   to 14 history resets per 600 frames, nearly all after 1 frame without a temporal pass. Owner: remove the
   watermark, old loggers off by default, both as launcher toggles.
-- **Build B4 (owner go 2026-11-19 17:59 GMT; on Build B3): shadgt7 `d9c5c52c` + rygt7 (this round).**
+- **Build B4 (owner go 2026-11-19 17:59 GMT; on Build B3): shadgt7 `d9c5c52c` + rygt7 `10d6502`; CI 44583947092 green, artifact 14563361374.**
   - shadgt7: PRT-LOGS `Common::VerboseLogs()` (common/diagnostics.h, `RYGT_LOG_VERBOSE=1`, off) gates the
     per-pipeline build line (77% of stdout), NAT-041, DIAG-059 (x2), HDUI-TRACE, FIX-GT7-043, SHD-006 census and
     the 2 s lines PERF-031, PERF-047, DIAG-118, readback pages, flips, deferred fences, mapping lookups, render
@@ -351,8 +351,8 @@ default, CI run, test result.
 | 2026-11-19 | shadgt7 | fb672cb | Build B2: `RYGT_BINK_30HZ` now off by default (=1 on); PRT-JITTER log every 600 menu temporal frames (`RYGT_PRT_JITTER`) | BINK30 off, JITTER on | 44537997225 green (artifact 14541255275) | tested 2026-11-19: world map back to 60; GT Auto jitter x/y about -0.25..+0.25 px, 0 zero/repeated, 0 to 1 resets per 600 (maybe half scale vs DLSS +-0.5) |
 | 2026-11-19 | shadgt7 | e78f9528 | Build B3: PRT-AVTEX AvPlayer buffer upload/fault counters (exports), PRT-JITTER v2 (raw offsets, period, reset causes), RYGT_AVP_* switch entries | log only | CI 44557775316 green, artifact 14550303109 | tested 2026-11-19: jitter x2 no visible change (ruled out); resets after 1-frame gaps in GT Auto |
 | 2026-11-19 | rygt7 | fbd5498 | Build B3: AvPlayer frame hold + FIFO pool (`RYGT_AVP_HOLD`), invalidate before write (`RYGT_AVP_INVALIDATE`), audio prefill (`RYGT_AVP_PREFILL_MS`), PRT-AVTEX / PRT-AVAUDIO logs | off (logs on) | CI 44557775316 green, artifact 14550303109 | tested 2026-11-19: b0 cutscene video fixed (no stutter); audio crack at start remains |
-| 2026-11-19 | shadgt7 | d9c5c52c | Build B4: PRT-LOGS old log lines behind `RYGT_LOG_VERBOSE`, watermark only with `RYGT_WATERMARK=1`, PRT-JITTER off, PRT-GAP `RYGT_DLSS_GAP_NO_RESET`, switch entries | off | CI pending | owner test pending |
-| 2026-11-19 | rygt7 | (B4 code commit) | Build B4: launcher About > Logging toggles (verbose logs, watermark), AvPlayer fade-in `RYGT_AVP_AUDIO_FADEIN_MS`, PRT-AVAUDIO v2 gap list | off | CI pending | owner test pending |
+| 2026-11-19 | shadgt7 | d9c5c52c | Build B4: PRT-LOGS old log lines behind `RYGT_LOG_VERBOSE`, watermark only with `RYGT_WATERMARK=1`, PRT-JITTER off, PRT-GAP `RYGT_DLSS_GAP_NO_RESET`, switch entries | off | CI 44583947092 green, artifact 14563361374 | owner test pending |
+| 2026-11-19 | rygt7 | 10d6502 | Build B4: launcher About > Logging toggles (verbose logs, watermark), AvPlayer fade-in `RYGT_AVP_AUDIO_FADEIN_MS`, PRT-AVAUDIO v2 gap list | off | CI 44583947092 green, artifact 14563361374 | owner test pending |
 | planned | shadgt7 | - | not-buildable prewarm records, from Build B PRT-PREWARM split | - | - | - |
 | planned | shadgt7 | - | tess batching, from Build B PRT-TESS lines | - | - | - |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
