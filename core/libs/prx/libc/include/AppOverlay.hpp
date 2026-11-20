@@ -64,6 +64,7 @@ private:
     std::vector<std::filesystem::path> lower;
     std::mutex mutex;
     std::unordered_map<Key, Listing> listings;
+    std::unordered_map<std::string, std::filesystem::path> resolvedCache;
 };
 
 /// The update and base game folders for this run, update first: RYGT_APP0_LAYERS (';'-separated)

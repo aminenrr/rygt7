@@ -71,19 +71,38 @@ std::optional<std::filesystem::path> AppOverlay::Find(const std::filesystem::pat
 }
 
 std::filesystem::path AppOverlay::Resolve(const std::string& relative) {
+    std::lock_guard lock(mutex);
+    if (const auto hit = resolvedCache.find(relative); hit != resolvedCache.end()) {
+        return hit->second;
+    }
     const auto parts = Split(relative);
     auto fallback = top;
     for (const auto& part : parts) fallback /= part;
-    if (!Layered() || parts.empty()) return fallback.make_preferred();
-    std::lock_guard lock(mutex);
-    bool directory = false;
-    if (auto found = Find(top, parts, directory)) return found->make_preferred();
-    if (!OnlyInTop(parts)) {
-        for (const auto& layer : lower) {
-            if (auto found = Find(layer, parts, directory)) return found->make_preferred();
+    std::filesystem::path result;
+    if (!Layered() || parts.empty()) {
+        result = fallback.make_preferred();
+    } else {
+        bool directory = false;
+        if (auto found = Find(top, parts, directory)) {
+            result = found->make_preferred();
+        } else {
+            if (!OnlyInTop(parts)) {
+                for (const auto& layer : lower) {
+                    if (auto foundLayer = Find(layer, parts, directory)) {
+                        result = foundLayer->make_preferred();
+                        break;
+                    }
+                }
+            }
+            if (result.empty()) {
+                result = fallback.make_preferred();
+            }
         }
     }
-    return fallback.make_preferred();
+    if (resolvedCache.size() < 32768) {
+        resolvedCache.emplace(relative, result);
+    }
+    return result;
 }
 
 std::optional<std::vector<AppOverlay::Entry>> AppOverlay::List(const std::string& relative) {

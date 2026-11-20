@@ -92,6 +92,36 @@ void Apply() {
 #ifdef _WIN32
     const std::string root = ExeFolder();
     const std::string config = ReadFile(root + "user\\custom_configs\\CUSA03220.json");
+    if (!root.empty()) {
+        const std::string ini = ReadFile(root + "RyGT7.ini");
+        std::size_t pos = 0;
+        while (pos < ini.size()) {
+            std::size_t eol = ini.find('\n', pos);
+            if (eol == std::string::npos) eol = ini.size();
+            std::string line = ini.substr(pos, eol - pos);
+            pos = eol + 1;
+            const std::size_t first = line.find_first_not_of(" \t\r\n");
+            if (first == std::string::npos) continue;
+            const std::size_t last = line.find_last_not_of(" \t\r\n");
+            line = line.substr(first, last - first + 1);
+            if (line.size() >= 3 &&
+                static_cast<unsigned char>(line[0]) == 0xEF &&
+                static_cast<unsigned char>(line[1]) == 0xBB &&
+                static_cast<unsigned char>(line[2]) == 0xBF) {
+                line.erase(0, 3);
+            }
+            if (line.compare(0, 6, "env=1|") == 0) {
+                const std::size_t eq = line.find('=', 6);
+                if (eq != std::string::npos && eq > 6) {
+                    const std::string name = line.substr(6, eq - 6);
+                    const std::string val = line.substr(eq + 1);
+                    if (!val.empty()) {
+                        SetIfMissing(name.c_str(), val);
+                    }
+                }
+            }
+        }
+    }
 #else
     const std::string root;
     const std::string config;

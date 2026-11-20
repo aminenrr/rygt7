@@ -1,4 +1,5 @@
 #include <mutex>
+#include <shared_mutex>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -18,7 +19,7 @@ namespace {
 // Guest prefixes (without leading slashes) mapped to host directories, e.g. save-data mount points:
 // the PS5 hands the title a short mount point ("/savedata0") whose files live under _sd/<dir name>.
 struct PathAliases {
-    std::mutex mutex;
+    std::shared_mutex mutex;
     std::vector<std::pair<std::string, std::string>> entries;
 };
 
@@ -43,7 +44,7 @@ std::string TrimSlashes(const char* path) {
 std::optional<std::filesystem::path> ResolveAlias(const std::string& guestPath) {
     const auto relative = TrimSlashes(guestPath.c_str());
     auto& aliases = Aliases();
-    std::lock_guard lock(aliases.mutex);
+    std::shared_lock lock(aliases.mutex);
     for (const auto& [prefix, host] : aliases.entries) {
         if (relative.size() < prefix.size() || relative.compare(0, prefix.size(), prefix) != 0) continue;
         if (relative.size() == prefix.size()) return std::filesystem::path(host).make_preferred();
@@ -55,7 +56,7 @@ std::optional<std::filesystem::path> ResolveAlias(const std::string& guestPath) 
 }
 
 struct WorkingDirectory {
-    std::mutex mutex;
+    std::shared_mutex mutex;
     const std::filesystem::path root = std::filesystem::canonical(std::filesystem::current_path());
     // The guest's current directory as a path under root. Under /app0 it may name a folder that only
     // exists in the update or base game folder (FEAT-GTS-251), so it is not always a real folder.
@@ -125,7 +126,7 @@ extern "C" void AddPathAlias_nid_no_patch(const char* guestPrefix, const char* h
         APS5_INVALID_ARG_EX;
     }
     auto& aliases = Aliases();
-    std::lock_guard lock(aliases.mutex);
+    std::unique_lock lock(aliases.mutex);
     const auto prefix = TrimSlashes(guestPrefix);
     for (auto& entry : aliases.entries) {
         if (entry.first == prefix) {
@@ -141,7 +142,7 @@ extern "C" void RemovePathAlias_nid_no_patch(const char* guestPrefix) {
         APS5_INVALID_ARG_EX;
     }
     auto& aliases = Aliases();
-    std::lock_guard lock(aliases.mutex);
+    std::unique_lock lock(aliases.mutex);
     const auto prefix = TrimSlashes(guestPrefix);
     std::erase_if(aliases.entries, [&](const auto& entry) { return entry.first == prefix; });
 }
@@ -149,7 +150,7 @@ extern "C" void RemovePathAlias_nid_no_patch(const char* guestPrefix) {
 extern "C" std::filesystem::path ResolvePath_nid_no_patch(const char* path) {
     if (!path) { APS5_INVALID_ARG_EX; }
     auto& state = Directories();
-    std::lock_guard lock(state.mutex);
+    std::shared_lock lock(state.mutex);
     return Resolve(state, path);
 }
 
@@ -160,7 +161,7 @@ extern "C" bool IsGameFolderPath_nid_no_patch(const std::filesystem::path& host)
 extern "C" bool ListLayeredDirectory_nid_no_patch(const char* path, std::vector<std::pair<std::filesystem::path, bool>>* entries) {
     if (!path || !entries) { APS5_INVALID_ARG_EX; }
     auto& state = Directories();
-    std::lock_guard lock(state.mutex);
+    std::shared_lock lock(state.mutex);
     const auto guest = GuestPath(state, path);
     if (!guest) return false;
     const auto relative = guest->relative_path().generic_string();
@@ -179,7 +180,7 @@ extern "C" int APS5_VABI chdir_nid_postfix(const char* path) {
     if (!*path) { errno = 2; return -1; }
     try {
         auto& state = Directories();
-        std::lock_guard lock(state.mutex);
+        std::unique_lock lock(state.mutex);
         std::error_code error;
         // A folder under /app0 can be in the update or base game folder, outside root: the current
         // directory is kept as the guest path under root and resolved again on each use.
@@ -210,7 +211,7 @@ extern "C" char* APS5_VABI getcwd_nid_postfix(char* buffer, std::size_t size) {
     if (buffer && size == 0) { errno = 22; return nullptr; }
     try {
         auto& state = Directories();
-        std::lock_guard lock(state.mutex);
+        std::shared_lock lock(state.mutex);
         std::error_code error;
         const auto relative = state.current.lexically_relative(state.root);
         const auto guest = std::filesystem::path("/") / (relative == "." ? std::filesystem::path() : relative);
