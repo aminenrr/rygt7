@@ -415,6 +415,7 @@ default, CI run, test result.
 | 2026-11-20 | rygt7 | 4975ab9 | Build B5 P1: Gustavo Petry's libc path lock / AppOverlay memo / RyGT7.ini launch defaults (fork 36c945426, #68) | always | CI 44732322761 green (attempt 2 after 403), artifact 14628929327 | owner test pending |
 | 2026-11-20 | rygt7 | 39750a0 | Build B5 P1: Gustavo Petry's tools/ryty_prewarm compute prewarm + launcher toggle (fork c6a2e8e31, #69), launcher 0.1.8 | toggle off | CI 44732322761 green (attempt 2 after 403), artifact 14628929327 | owner test pending |
 | 2026-11-20 | rygt7 | 1b4fbb5 | Build B5 P2/P3 launcher toggles (splash prewarm on, launcher graphics prewarm off), CI packages tools/ryty_prewarm.exe, Build B5 docs | P2 on, P3 off | CI 44732322761 green (attempt 2 after 403), artifact 14628929327 | owner test pending |
+| 2026-11-20 | shadgt7 | c42b3464 | Build B6: GT Auto fixes off by default after the owner's B5 test (d1 game AA soft garage, d2 aliasing back; owner: not worth it, keep DLSS elsewhere safe): `RYGT_HD_UI_LATE_TEMPORAL`, `RYGT_HD_UI_LATE_GIVE_UP`, `RYGT_HD_RACE_NO_READBACK`, `RYGT_HD_RACE_HOLD` (30 to 0), `RYGT_PRT_GTAUTO5` log; F1/F2 stay off | off (=1 on, HOLD=frames) | B6 CI pending | GT Auto work dropped by owner 2026-11-20 |
 | planned | shadgt7 | - | not-buildable prewarm records, from Build B PRT-PREWARM split | - | - | - |
 | planned | shadgt7 | - | tess batching, from Build B PRT-TESS lines | - | - | - |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
