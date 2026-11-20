@@ -377,6 +377,50 @@ cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder bu
     ~144k draws per window). Batch more draws per barrier or drop unneeded barriers. First fix
     whatever PRT-TESS shows as skipped draws.
 
+## Move to shadGT + PS4 Pro focus (2026-11-20)
+- **Why:** upstream RyGT-Team/shadgt7 is archived (last push 2026-11-15); renderer work moved to
+  RyGT-Team/shadGT branch `ryty-gpu` (one renderer for GT Sport + GT7). Owner focus since 2026-11-20
+  15:35 GMT is **PS4 Pro mode** (DLSS off, HD UI off). DLSS, HD UI, GT Auto, name-tag (HudScale) work
+  is dropped for now. F1/F2 stay off. The shadgt7 B6 list is superseded (launcher items stay in rygt7).
+- **Round 1 (done):** fork aminenrr/shadGT, branch `pr-tests` = upstream `ryty-gpu` 62059d8 (no
+  changes). rygt7 `5c081b7`: `.github/workflows/rygt7-ci.yml` FORK_RENDERER_REPO `aminenrr/shadGT`,
+  `build-support/renderer.json` -> `https://github.com/aminenrr/shadGT.git` branch pr-tests. CI
+  44766427677 green, artifact 14647524635. shadGT has the same `SHADGT_RYTY_GPU` switch and the same
+  9 ryty targets as shadgt7; binary shadGT; GT7 via `SHADGT_GAME=gt7` or exe name.
+- **Round 1 owner test (2026-11-20 16:53 to 17:32 GMT, log in the project's work/logs/r1):** Pro mode
+  a bit sharper than shadgt7 B5 Pro; no crash over two races; haptics (FEAT-GTS-436) and adaptive
+  triggers on. Trophies do not show in game (renderer part missing). Pre-rendered cutscenes stutter
+  unless the AvPlayer switches are set (they are rygt7 code, off by default; with the 4 switches set
+  cutscenes are fixed). Race 2 pop-in for about a lap = cold shader cache (PERF-GTS-493 "one-off
+  pictures skipped in the race", a depth picture skipped 416 times). 40 caught `read-write alias of
+  shared guest memory ... not one contiguous run` throws on GpuRecorder in stderr (shadGT's own, watch).
+  shadGT logs no fps/VRAM line, so no fps compare vs B5 Pro (37 to 46 fps, 7.3 GB).
+- **Launcher graphics prewarm toggle must stay OFF on Round 1** (shadGT has no RYGT_PREWARM_ONLY).
+- **Round 2 (owner list 2026-11-20 17:36 GMT, NOT BUILT, needs owner go; one CI run):**
+  1. Shader precompile port to shadGT pr-tests: PRT-PREWARM (shadgt7 `d0235932`, `50721c9b` PRT-KEEP),
+     splash prewarm + splash bar (PRT-SPLASH), launcher prewarm-only mode (shadgt7 `930c01ef`,
+     `RYGT_PREWARM_ONLY=1`). Check first what shadGT already has (PERF-032 store, PERF-GT7-117
+     pretranslate, PERF-036 driver cache, its own #40/#42/#44 precompile) and port only what is missing.
+  2. Launcher prewarm crash fix: abort() in libSceVideoOut right after `SRT walker code uses 240 MB of
+     256 MB` (flatten_extended_userdata_pass.cpp), at ~21766 to 21800 of 35811 shaders (B5 d0 and d1);
+     likely the 256 MB SRT codegen buffer fills (inferred).
+  3. Launcher warm skip: stamp after a clean PRT-PREWARM-DONE; skip the launcher pass next time if
+     nothing new was recorded; the in-game splash step only verifies.
+  4. Not-buildable prewarm records: B5 splash 36079 recorded, 31779 built, 4068 not buildable (b0:
+     1398 all "stage not in store"). Make them buildable.
+  5. VRAM Auto budget on 8 GB mobile cards (Auto gives 6342 MB on the owner's RTX 3070 Ti laptop 8 GB).
+  6. Trophies renderer part: port shadgt7 `9767f071` (PR RyGT-Team/shadgt7#54, 16 files, +1161/-14).
+     Trial `git apply --3way` onto shadGT ryty-gpu: 13 files clean, conflicts in ryty_gpu/ryty_entry.cpp,
+     src/video_core/rygt_switches.cpp, tests/CMakeLists.txt. Launcher trophies page (rygt7 #58) is in.
+  7. Cutscene fixes on by default (rygt7 libSceAvPlayer.native/Export.cpp): `RYGT_AVP_HOLD=3`,
+     `RYGT_AVP_INVALIDATE=1` (uses RytyGpuInvalidateMemory, present in shadGT ryty_entry.cpp),
+     `RYGT_AVP_PREFILL_MS=100`, `RYGT_AVP_AUDIO_FADEIN_MS=20`; `=0` turns each off. Owner confirmed.
+  8. Launcher opens without Play and gear buttons (B5 regression, rygt7 `1b4fbb5`): HomeView.OnLayout
+     skips `!button.Visible`, but every button reads hidden before the form shows. Fix: track the wanted
+     visibility in a flag instead of reading Visible.
+- **Still parked:** tess (stage not translated + FIX-227 barrier batching), dynamic topology (low),
+  shadgt7 #45, rygt7 #65, Pro mode sharpen/checkerboard resolve check, garage nvoglv64.dll crash (watch).
+
 ## Fix log (keep this up to date)
 Every new commit on either `pr-tests` branch gets a line here: date, repo, commit, fix or switch,
 default, CI run, test result.
