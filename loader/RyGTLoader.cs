@@ -1119,6 +1119,7 @@ namespace RyGT
             int x = Left_;
             foreach (var button in buttons)
             {
+                if (!button.Visible) continue;
                 button.Location = new Point(x, ButtonsTop);
                 x += button.Width + Gap;
             }
@@ -1629,6 +1630,7 @@ namespace RyGT
         // Settings: a sidebar of categories and their pages.
         readonly HomeView home;
         readonly GlowButton updateButton;
+        readonly GlowButton cancelPrewarm;
         ReleaseInfo pendingUpdate;
         ControlsPage controls;
         readonly Panel settingsView, pagesHost;
@@ -1637,6 +1639,9 @@ namespace RyGT
         readonly Dictionary<string, SidebarItem> pageItems = new Dictionary<string, SidebarItem>();
         string lastPage = "Game";
         volatile bool busy;
+        volatile bool prewarmCancelled;
+        Process activePrewarmProcess;
+        readonly object prewarmLock = new object();
 
         public LoaderForm()
         {
@@ -1669,8 +1674,10 @@ namespace RyGT
             play.Click += delegate { PlayFromSwitch(); };
             var gear = new GlowButton { Text = ((char)0xE713).ToString(), Glyph = true, Size = new Size(46, 46), Font = new Font("Segoe MDL2 Assets", 13f) };
             gear.Click += delegate { ShowSettings(lastPage); };
+            cancelPrewarm = new GlowButton { Text = "Cancel", Size = new Size(116, 46), Font = Dark.Caps(10f), Visible = false };
+            cancelPrewarm.Click += delegate { CancelPrewarm(); };
             var logoImage = LoadLogo();
-            home = new HomeView(pictures, (GlowButton)play, gear)
+            home = new HomeView(pictures, (GlowButton)play, gear, cancelPrewarm)
             {
                 Dock = DockStyle.Fill, Logo = logoImage, Title = "GRAN TURISMO", Accent = "7",
                 Caption = Dark.Spaced("CUSA24769   " + (char)183 + "   PS4   " + (char)183 + "   RYGT7 FOR WINDOWS"),
@@ -2464,6 +2471,8 @@ namespace RyGT
                 try { WriteSetting("GPU", "compile_mode", mode.SelectedIndex); }
                 catch (Exception e) { MessageBox.Show(this, "Could not save the setting: " + e.Message); }
             };
+            AddOption(shaders, "Precompile shaders before starting game (Vulkan compute pipelines & store audit)", "GPU", "precompile_before_play", false);
+            shaders.Controls.Add(Hint("When checked, runs tools\\ryty_prewarm.exe before launching GT7: validates CUSA03220-direct-sets SPIR-V files and warms recorded compute pipelines into CUSA03220.vkpipelinecache (incremental, resumable, cancelable). Graphics pipelines for unseen cars/tracks still compile when first drawn."));
 
 
             // ---- Controls: the controller, keyboard and wheel, drawn (ControlsPage); the controller
@@ -3970,6 +3979,7 @@ namespace RyGT
             DefaultSetting("GPU", "readbacks_mode", 2);
             DefaultSetting("GPU", "compile_mode", 2);
             DefaultSetting("GPU", "precompile_shaders", false);
+            DefaultSetting("GPU", "precompile_before_play", false);
             DefaultSetting("General", "show_splash", true);
             DefaultSetting("General", "player_names", "Player 1,Player 2");
             DefaultSetting("Input", "background_controller_input", true);
@@ -4144,6 +4154,20 @@ namespace RyGT
                     UsePortableShaderCache();
                     ConfigureGT7();
                     settings.Save();
+                    if (GpuSetting(root, "precompile_before_play") is bool && (bool)GpuSetting(root, "precompile_before_play"))
+                    {
+                        if (!RunPrecompileBeforePlay())
+                        {
+                            BeginInvoke(new Action(delegate
+                            {
+                                busy = false;
+                                SetCancelVisible(false);
+                                RefreshState();
+                                status.Text = "Shader precompilation cancelled (partial cache saved). Press Play.";
+                            }));
+                            return;
+                        }
+                    }
                     prepared = true;
                 }
                 catch (DumpFileException e) { Log("ERROR: " + e.Message); playDumpProblem = e; }
@@ -4151,6 +4175,7 @@ namespace RyGT
                 BeginInvoke(new Action(delegate
                 {
                     busy = false;
+                    SetCancelVisible(false);
                     RefreshState();
                     if (playDumpProblem != null) ShowRedumpHint(playDumpProblem);
                     if (prepared)
@@ -4163,6 +4188,153 @@ namespace RyGT
             });
             thread.IsBackground = true;
             thread.Start();
+        }
+
+        void SetCancelVisible(bool visible)
+        {
+            if (IsDisposed || !IsHandleCreated) return;
+            Action apply = delegate
+            {
+                cancelPrewarm.Visible = visible;
+                cancelPrewarm.Enabled = visible;
+                home.PerformLayout();
+                home.Invalidate(true);
+            };
+            if (InvokeRequired) BeginInvoke(apply); else apply();
+        }
+
+        void CancelPrewarm()
+        {
+            prewarmCancelled = true;
+            cancelPrewarm.Enabled = false;
+            SetStatus("Cancelling shader precompilation cleanly...");
+            lock (prewarmLock)
+            {
+                if (activePrewarmProcess != null)
+                {
+                    try
+                    {
+                        if (!activePrewarmProcess.HasExited)
+                        {
+                            activePrewarmProcess.StandardInput.WriteLine("CANCEL");
+                            activePrewarmProcess.StandardInput.Flush();
+                        }
+                    }
+                    catch { }
+                }
+            }
+        }
+
+        internal static string BuildPrewarmArguments(string root, long cacheMaxMb)
+        {
+            long budget = cacheMaxMb < 0 ? 0 : cacheMaxMb;
+            return "prewarm --root \"" + root.TrimEnd('\\') + "\" --cache-max-mb " + budget;
+        }
+
+        internal static bool ParsePrewarmLine(string line, out string kind, out Dictionary<string, string> fields)
+        {
+            kind = "";
+            fields = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (string.IsNullOrWhiteSpace(line)) return false;
+            string[] parts = line.Split('|');
+            if (parts.Length == 0) return false;
+            kind = parts[0];
+            for (int i = 1; i < parts.Length; ++i)
+            {
+                int eq = parts[i].IndexOf('=');
+                if (eq > 0) fields[parts[i].Substring(0, eq)] = parts[i].Substring(eq + 1);
+                else fields["_" + i] = parts[i];
+            }
+            return kind.Length > 0;
+        }
+
+        bool RunPrecompileBeforePlay()
+        {
+            string tool = Path.Combine(root, "tools", "ryty_prewarm.exe");
+            if (!File.Exists(tool))
+            {
+                Log("Shader pre-warmer not found (" + tool + "); starting GT7 directly.");
+                return true;
+            }
+            prewarmCancelled = false;
+            SetCancelVisible(true);
+            SetStatus("Precompiling shaders: inspecting Vulkan GPU & cache...");
+
+            long cacheMaxMb = DriverCacheMaxMb(root);
+            foreach (var ev in settings.Env)
+            {
+                long customMb;
+                if (string.Equals(ev.Name, "RYGT_DRIVER_CACHE_MAX_MB", StringComparison.Ordinal) &&
+                    long.TryParse(ev.Value, out customMb))
+                    cacheMaxMb = customMb;
+            }
+
+            var psi = new ProcessStartInfo(tool, BuildPrewarmArguments(root, cacheMaxMb))
+            {
+                WorkingDirectory = root,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                RedirectStandardInput = true
+            };
+
+            try
+            {
+                using (var proc = Process.Start(psi))
+                {
+                    if (proc == null) return true;
+                    lock (prewarmLock) { activePrewarmProcess = proc; }
+                    string stderrText = "";
+                    var errThread = new Thread(delegate ()
+                    {
+                        try { stderrText = proc.StandardError.ReadToEnd(); } catch { }
+                    });
+                    errThread.IsBackground = true;
+                    errThread.Start();
+
+                    string gpuName = "";
+                    string line;
+                    while ((line = proc.StandardOutput.ReadLine()) != null)
+                    {
+                        string kind;
+                        Dictionary<string, string> f;
+                        if (!ParsePrewarmLine(line, out kind, out f)) continue;
+                        if (kind == "INFO" && f.ContainsKey("gpu")) gpuName = f["gpu"];
+                        else if (kind == "AUDIT")
+                        {
+                            string spvs = f.ContainsKey("direct_sets_spv") ? f["direct_sets_spv"] : "0";
+                            string bad = f.ContainsKey("spv_invalid") ? f["spv_invalid"] : "0";
+                            string wcs = f.ContainsKey("warm_compute_recipes") ? f["warm_compute_recipes"] : "0";
+                            Log("Shader audit (" + gpuName + "): direct-sets=" + spvs + " (invalid=" + bad + "), warm_compute=" + wcs);
+                            SetStatus("Audited " + spvs + " stored shaders; warming " + wcs + " compute pipelines...");
+                        }
+                        else if (kind == "PROGRESS" && f.ContainsKey("_2") && f.ContainsKey("_3"))
+                        {
+                            string comp = f.ContainsKey("compiled") ? f["compiled"] : "0";
+                            SetStatus("Precompiling shaders (" + f["_2"] + "/" + f["_3"] + ", " + comp + " compiled)...");
+                        }
+                        else if (kind == "WARN" && f.ContainsKey("_2"))
+                            Log("Prewarm warning: " + f["_2"]);
+                        else if (kind == "ERROR" && f.ContainsKey("_2"))
+                            Log("Prewarm error: " + f["_2"]);
+                        else if (kind == "DONE")
+                            Log("Prewarm finished: " + line);
+                    }
+
+                    proc.WaitForExit();
+                    errThread.Join(1000);
+                    lock (prewarmLock) { activePrewarmProcess = null; }
+                    if (!string.IsNullOrWhiteSpace(stderrText)) Log("Prewarm stderr: " + stderrText.Trim());
+                    return !(prewarmCancelled || proc.ExitCode == 3);
+                }
+            }
+            catch (Exception e)
+            {
+                lock (prewarmLock) { activePrewarmProcess = null; }
+                Log("Shader precompilation error (non-blocking, starting GT7): " + e.Message);
+                return true;
+            }
         }
 
         /// Starts GT7.exe with session log rotation and waits for GPU recovery if Vulkan loses

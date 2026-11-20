@@ -6,6 +6,13 @@ The version lives in `loader/Version.cs`. To release a change, bump
 `LauncherVersion.Value` there and add a section here with the same number;
 CI fails when the two disagree.
 
+## 0.1.8 - 2026-11-19
+
+* Shaders page: adds an opt-in "Precompile shaders before starting game" toggle (`GPU.precompile_before_play`)
+  that runs `tools\ryty_prewarm.exe` before launching `GT7.exe` with live progress, clean cancellation,
+  incremental SPIR-V store auditing, `.meta` OS page-cache pre-warming, and monotonic `VkPipelineCache`
+  compute pipeline warming.
+
 ## 0.1.7 - 2026-11-16
 
 * FIX-GTS-271: GT7's online-service keys are no longer in ryGT7. RyGTServer reads them from your own

@@ -342,6 +342,17 @@ namespace RyGT
                 Check(detailBias == "0" && detailExtra == null, "DLSS texture detail Off: no bias");
                 TrophyChecks();
                 TrophyFileChecks(Path.Combine(root, "trophy-files"));
+                // Shader pre-warm argument formatting & structured line parsing:
+                Check(LoaderForm.BuildPrewarmArguments(@"C:\RyGT7\install\", 3072) == "prewarm --root \"C:\\RyGT7\\install\" --cache-max-mb 3072", "Prewarm CLI args built cleanly");
+                Check(LoaderForm.BuildPrewarmArguments(@"C:\RyGT7\install", -1) == "prewarm --root \"C:\\RyGT7\\install\" --cache-max-mb 0", "Unlimited driver cache maps to 0 unbounded budget for prewarmer");
+                string pk; System.Collections.Generic.Dictionary<string, string> pf;
+                Check(LoaderForm.ParsePrewarmLine("PROGRESS|COMPUTE|72|172|compiled=64|skipped=8|elapsedMs=4200", out pk, out pf) &&
+                      pk == "PROGRESS" && pf["_1"] == "COMPUTE" && pf["_2"] == "72" && pf["_3"] == "172" && pf["compiled"] == "64",
+                      "Prewarm PROGRESS line parsed cleanly");
+                Check(LoaderForm.ParsePrewarmLine("AUDIT|direct_sets_spv=15061|spv_invalid=0|warm_compute_recipes=172", out pk, out pf) &&
+                      pk == "AUDIT" && pf["direct_sets_spv"] == "15061" && pf["warm_compute_recipes"] == "172",
+                      "Prewarm AUDIT line parsed cleanly");
+                Check(!LoaderForm.ParsePrewarmLine("", out pk, out pf), "Empty prewarm line ignored");
                 Console.WriteLine("PASS: " + checks + " GT7 setup checks");
                 return 0;
             }

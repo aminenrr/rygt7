@@ -1,0 +1,7 @@
+if(WIN32)
+    add_executable(ryty_prewarm ryty_prewarm.cpp)
+    target_compile_features(ryty_prewarm PRIVATE cxx_std_20)
+    if(MINGW)
+        target_link_options(ryty_prewarm PRIVATE -static -static-libgcc -static-libstdc++)
+    endif()
+endif()

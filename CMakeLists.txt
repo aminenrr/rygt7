@@ -142,6 +142,10 @@ endif()
 
 add_subdirectory(core/relinker)
 
+if(WIN32)
+    add_subdirectory(tools/ryty_prewarm)
+endif()
+
 if(NOT WIN32 AND NOT APPLE)
     string(REPLACE "-static-libgcc" "" RTY_NO_STATIC_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
     string(REPLACE "-static-libstdc++" "" RTY_NO_STATIC_FLAGS "${RTY_NO_STATIC_FLAGS}")
