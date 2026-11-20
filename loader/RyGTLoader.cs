@@ -874,6 +874,16 @@ namespace RyGT
         /// The text is a Segoe MDL2 Assets glyph (the settings button), not a word in capitals.
         public bool Glyph;
         static readonly int sweepStart = Environment.TickCount;
+        /// PRT-HOMEBTN (Round 2): whether this button is meant to show. Visible reads false for every
+        /// button until the form itself shows, so the home view lays out by this flag instead.
+        bool wanted = true;
+        public bool Wanted { get { return wanted; } }
+
+        protected override void SetVisibleCore(bool value)
+        {
+            wanted = value;
+            base.SetVisibleCore(value);
+        }
 
         public GlowButton()
         {
@@ -1119,7 +1129,7 @@ namespace RyGT
             int x = Left_;
             foreach (var button in buttons)
             {
-                if (!button.Visible) continue;
+                if (!button.Wanted) continue; // PRT-HOMEBTN: not Visible (false before the form shows)
                 button.Location = new Point(x, ButtonsTop);
                 x += button.Width + Gap;
             }
@@ -4491,6 +4501,24 @@ namespace RyGT
                 // Last, so no other setting turns it off: this process never runs the game.
                 start.EnvironmentVariables["RYGT_PREWARM_ONLY"] = "1";
                 start.EnvironmentVariables["RYGT_PIPELINE_PREWARM"] = "1";
+                // PRT-WARMSKIP (Round 2): after a clean pass the launcher stamps the renderer it ran; the next
+                // launch skips the pass while that renderer is unchanged and no game session recorded a new
+                // pipeline since (the renderer creates prewarm.dirty then). The splash screen step still
+                // builds the recorded pipelines in game. RYGT_PREWARM_WARM_SKIP=0 always runs the pass.
+                string stampFile = Path.Combine(root, "prewarm.stamp");
+                string dirtyFile = Path.Combine(root, "prewarm.dirty");
+                string stamp = PrewarmStamp(root);
+                bool warmSkip = start.EnvironmentVariables["RYGT_PREWARM_WARM_SKIP"] != "0";
+                if (warmSkip && stamp != null && !File.Exists(dirtyFile) && File.Exists(stampFile))
+                {
+                    string old = null;
+                    try { old = File.ReadAllText(stampFile).Trim(); } catch { }
+                    if (old == stamp)
+                    {
+                        Log("PRT-WARMSKIP: graphics prewarm skipped (nothing new recorded since the last clean pass, same renderer).");
+                        return true;
+                    }
+                }
                 Log("Graphics prewarm: GT7.exe in RYGT_PREWARM_ONLY mode.");
                 using (var proc = Process.Start(start))
                 {
@@ -4520,6 +4548,12 @@ namespace RyGT
                     Log("Graphics prewarm ended (exit code " + code + ", " + watch.Elapsed.TotalSeconds.ToString("0.0") + " s): " + (done ?? "no progress file"));
                     if (prewarmCancelled || code == 2) return false;
                     if (code != 0) Log("Graphics prewarm did not finish normally; starting GT7 anyway (the splash screen step builds what is missing).");
+                    // PRT-WARMSKIP: a clean pass (exit 0 and PRT-PREWARM-DONE) stamps the renderer and clears the mark.
+                    if (code == 0 && done != null && done.StartsWith("PRT-PREWARM-DONE", StringComparison.Ordinal) && stamp != null)
+                    {
+                        try { File.Delete(dirtyFile); File.WriteAllText(stampFile, stamp); Log("PRT-WARMSKIP: stamped (" + stamp + ")."); }
+                        catch (Exception e) { Log("PRT-WARMSKIP: stamp not written: " + e.Message); }
+                    }
                     return true;
                 }
             }
@@ -4533,6 +4567,19 @@ namespace RyGT
                 graphicsPrewarmRunning = false;
                 try { File.Delete(cancelFile); } catch { }
             }
+        }
+
+        /// PRT-WARMSKIP: which renderer a clean launcher pass ran (size and write time of
+        /// libs\libSceVideoOut.prx); null when it is missing.
+        static string PrewarmStamp(string root)
+        {
+            try
+            {
+                var prx = new FileInfo(Path.Combine(root, "libs", "libSceVideoOut.prx"));
+                if (!prx.Exists) return null;
+                return "renderer " + prx.Length + " " + prx.LastWriteTimeUtc.Ticks;
+            }
+            catch { return null; }
         }
 
         static string ReadLastPrewarmLine(string file)

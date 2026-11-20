@@ -360,14 +360,15 @@ bool AvpSmoothClock() {
     return on;
 }
 
-// Build B3 switches (pr-tests, all off by default).
+// Build B3 switches (pr-tests). PRT-AVDEF (Round 2, 2026-11-20): on by default after the owner's shadGT test
+// (HOLD 3, INVALIDATE 1, PREFILL 100 ms, FADEIN 20 ms); =0 turns each off.
 // RYGT_AVP_HOLD=N: a frame buffer the title was shown stays out of the decoder's reach for N more takes, and the
 // free pool is taken oldest first. Without it the buffer just released was the next one overwritten, ~2 ms later,
 // while the GPU could still be reading it (the decoder waits ~1.7 s of every 2 s for a free buffer).
 std::uint32_t AvpHold() {
     static const std::uint32_t n = [] {
         const char* env = std::getenv("RYGT_AVP_HOLD");
-        const int v = env ? std::atoi(env) : 0;
+        const int v = (env && *env) ? std::atoi(env) : 3;
         const auto r = static_cast<std::uint32_t>(std::clamp(v, 0, 8));
         std::fprintf(stderr, "[AVP] PRT-AVTEX: frame hold %u (RYGT_AVP_HOLD)\n", r);
         return r;
@@ -379,7 +380,7 @@ std::uint32_t AvpHold() {
 bool AvpInvalidate() {
     static const bool on = [] {
         const char* env = std::getenv("RYGT_AVP_INVALIDATE");
-        const bool v = env && env[0] == '1';
+        const bool v = !(env && *env) || env[0] != '0';
         std::fprintf(stderr, "[AVP] PRT-AVTEX: invalidate before write %s (RYGT_AVP_INVALIDATE)\n", v ? "on" : "off");
         return v;
     }();
@@ -387,12 +388,12 @@ bool AvpInvalidate() {
 }
 // RYGT_AVP_PREFILL_MS=N: Start waits (at most 500 ms) until N ms of audio and a picture are decoded, and the
 // clock starts after that.
-// RYGT_AVP_AUDIO_FADEIN_MS=N (PRT-AVFADE, Build B4, off): the first N ms of a cutscene's sound rise from
+// RYGT_AVP_AUDIO_FADEIN_MS=N (PRT-AVFADE, Build B4; 20 by default since Round 2): the first N ms of a cutscene's sound rise from
 // silence, against the crack at its start.
 std::uint32_t AvpFadeInMs() {
     static const std::uint32_t n = [] {
         const char* env = std::getenv("RYGT_AVP_AUDIO_FADEIN_MS");
-        const int v = env ? std::atoi(env) : 0;
+        const int v = (env && *env) ? std::atoi(env) : 20;
         const auto r = static_cast<std::uint32_t>(std::clamp(v, 0, 200));
         std::fprintf(stderr, "[AVP] PRT-AVFADE: audio fade-in %u ms (RYGT_AVP_AUDIO_FADEIN_MS)\n", r);
         return r;
@@ -402,7 +403,7 @@ std::uint32_t AvpFadeInMs() {
 std::uint32_t AvpPrefillMs() {
     static const std::uint32_t n = [] {
         const char* env = std::getenv("RYGT_AVP_PREFILL_MS");
-        const int v = env ? std::atoi(env) : 0;
+        const int v = (env && *env) ? std::atoi(env) : 100;
         const auto r = static_cast<std::uint32_t>(std::clamp(v, 0, 400));
         std::fprintf(stderr, "[AVP] PRT-AVAUDIO: audio prefill %u ms (RYGT_AVP_PREFILL_MS)\n", r);
         return r;
