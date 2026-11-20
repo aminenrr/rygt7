@@ -504,3 +504,10 @@ default, CI run, test result.
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
 
 - Untouched: trophies upstream PRs (RyGT-Team/shadgt7#54, rygt7#58, open).
+
+### Round 2 owner test (2026-11-20, 4 runs, logs work/logs/r2)
+- Works: trophy pop-up test, pre-rendered cutscenes (no bat), launcher prewarm (995 -> 1177 -> 4924 records), PRT-WARMSKIP stamps, PRT-VRAMAUTO Auto 6993 MB (device local heap minus 1024, not 7168), PRT-PERF lines, PRT-SRTUSE lines. No device loss.
+- Race on a partly compiled track: some texture pop in and out. New track: texture anomalies while compiling. Both gone on the second run of the same tracks.
+- Freezes with a lower right notice "Compiling shaders (n)" or "Loading": that is shadGT FIX-GT7-100 compile_notice_layer (SHADGT_COMPILE_NOTICE), shown when a frame is stuck 500 ms+, so it marks the freeze, it does not cause it. "Loading" = stuck with no pipeline jobs. Lower left is the old notice. Open.
+- Shader folder: Pro mode reaches 4.5 GB after 2 or 3 tracks (1080p + HD UI + DLSS build reached about 6 GB after many). Owner wants a real fix. Open.
+- Audio crackle/stutter in game. Upstream RyGT-Team/rygt7#70 (shared SDL mixer, one callback) is a different fix from our cutscene AvPlayer work. Not ported (needs ask).
