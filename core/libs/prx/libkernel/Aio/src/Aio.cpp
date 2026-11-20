@@ -12,6 +12,10 @@
 #include "prx/libkernel/KernelErrors.hpp"
 
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #include <fcntl.h>
 #include <io.h>
 #include <limits>
@@ -51,24 +55,32 @@ void SetState(std::int32_t id, std::int32_t state) {
 
 std::int64_t NativePread(std::int32_t fd, void* buf, std::size_t nbyte, std::int64_t offset) {
 #ifdef _WIN32
-    if (nbyte > static_cast<std::size_t>(std::numeric_limits<unsigned int>::max())) {
+    if (nbyte > static_cast<std::size_t>(std::numeric_limits<DWORD>::max())) {
         throw std::runtime_error("sceKernelAioSubmitReadCommands: nbytes exceeds platform limit");
     }
-    const int duped = ::_dup(fd);
-    if (duped < 0) return -1;
-    if (::_lseeki64(duped, offset, SEEK_SET) < 0) {
-        const int error = errno;
-        ::_close(duped);
-        errno = error;
+    if (offset < 0) {
+        errno = EINVAL;
         return -1;
     }
-    const int result = static_cast<int>(ReadIntoGuest(buf, nbyte, [&](void* target) -> std::int64_t {
-        return ::_read(duped, target, static_cast<unsigned int>(nbyte));
-    }));
-    const int error = errno;
-    ::_close(duped);
-    errno = error;
-    return result;
+    const HANDLE handle = reinterpret_cast<HANDLE>(::_get_osfhandle(fd));
+    if (handle == INVALID_HANDLE_VALUE) {
+        errno = EBADF;
+        return -1;
+    }
+    return ReadIntoGuest(buf, nbyte, [&](void* target) -> std::int64_t {
+        OVERLAPPED at{};
+        at.Offset = static_cast<DWORD>(offset);
+        at.OffsetHigh = static_cast<DWORD>(static_cast<std::uint64_t>(offset) >> 32u);
+        DWORD got = 0;
+        if (::ReadFile(handle, target, static_cast<DWORD>(nbyte), &got, &at)) {
+            return static_cast<std::int64_t>(got);
+        }
+        const DWORD err = ::GetLastError();
+        if (err == ERROR_HANDLE_EOF) return 0;
+        ::SetLastError(err);
+        errno = (err == ERROR_INVALID_HANDLE) ? EBADF : EIO;
+        return -1;
+    });
 #else
     return static_cast<std::int64_t>(::pread(fd, buf, nbyte, static_cast<off_t>(offset)));
 #endif
@@ -76,22 +88,29 @@ std::int64_t NativePread(std::int32_t fd, void* buf, std::size_t nbyte, std::int
 
 std::int64_t NativePwrite(std::int32_t fd, const void* buf, std::size_t nbyte, std::int64_t offset) {
 #ifdef _WIN32
-    if (nbyte > static_cast<std::size_t>(std::numeric_limits<unsigned int>::max())) {
+    if (nbyte > static_cast<std::size_t>(std::numeric_limits<DWORD>::max())) {
         throw std::runtime_error("sceKernelAioSubmitWriteCommands: nbytes exceeds platform limit");
     }
-    const int duped = ::_dup(fd);
-    if (duped < 0) return -1;
-    if (::_lseeki64(duped, offset, SEEK_SET) < 0) {
-        const int error = errno;
-        ::_close(duped);
-        errno = error;
+    if (offset < 0) {
+        errno = EINVAL;
         return -1;
     }
-    const int result = ::_write(duped, buf, static_cast<unsigned int>(nbyte));
-    const int error = errno;
-    ::_close(duped);
-    errno = error;
-    return result;
+    const HANDLE handle = reinterpret_cast<HANDLE>(::_get_osfhandle(fd));
+    if (handle == INVALID_HANDLE_VALUE) {
+        errno = EBADF;
+        return -1;
+    }
+    OVERLAPPED at{};
+    at.Offset = static_cast<DWORD>(offset);
+    at.OffsetHigh = static_cast<DWORD>(static_cast<std::uint64_t>(offset) >> 32u);
+    DWORD got = 0;
+    if (::WriteFile(handle, buf, static_cast<DWORD>(nbyte), &got, &at)) {
+        return static_cast<std::int64_t>(got);
+    }
+    const DWORD err = ::GetLastError();
+    ::SetLastError(err);
+    errno = (err == ERROR_INVALID_HANDLE) ? EBADF : EIO;
+    return -1;
 #else
     return static_cast<std::int64_t>(::pwrite(fd, buf, nbyte, static_cast<off_t>(offset)));
 #endif

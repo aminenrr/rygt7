@@ -23,10 +23,22 @@ enum class GuestReadPhase : std::uint32_t {
 class GuestReadBuffer {
 public:
     static constexpr std::size_t MinimumSize = 32 * 1024;
-    static constexpr std::size_t MaximumSize = 1024 * 1024;
+    static constexpr std::size_t MaximumSize = 4 * 1024 * 1024;
 
     char* Acquire(std::size_t bytes) {
         if (inUse || bytes < MinimumSize || bytes > MaximumSize) return nullptr;
+        return AcquireImpl(bytes);
+    }
+
+    char* AcquireAny(std::size_t bytes) {
+        if (inUse || bytes < 1 || bytes > MaximumSize) return nullptr;
+        return AcquireImpl(bytes);
+    }
+
+    void Release() { inUse = false; }
+
+private:
+    char* AcquireImpl(std::size_t bytes) {
         if (bytes > capacity) {
             const std::size_t next = (bytes + 65535) & ~std::size_t{65535};
             std::unique_ptr<char[]> allocated{new (std::nothrow) char[next]};
@@ -38,9 +50,6 @@ public:
         return data.get();
     }
 
-    void Release() { inUse = false; }
-
-private:
     std::unique_ptr<char[]> data;
     std::size_t capacity{};
     bool inUse{};
