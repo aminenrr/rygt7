@@ -119,6 +119,8 @@ def assemble(args):
         ('launcher', args.launcher, 'rygt7-source-build'), ('converter', args.converter, 'rygt7-source-build'),
         ('wheel_probe', args.wheel_probe, 'rygt7-source-build'),
         ('feel_test', one_file(args.renderer_build, FEEL_TEST), 'shadgt7-source-build'))}
+    if getattr(args, 'prewarmer', None) is not None:  # PRT-B5: tools/ryty_prewarm.exe
+        info['components']['prewarmer'] = {'sha256': sha(args.prewarmer), 'origin': 'rygt7-source-build'}
     args.info.write_text(json.dumps(info, indent=2) + '\n', encoding='utf-8')
 
 def package(args):
@@ -135,6 +137,8 @@ def package(args):
                 '--out', str(args.out), '--name', args.name]
     if getattr(args, 'dlss_plugin', None) is not None:
         sys.argv += ['--dlss-plugin', str(args.runtime / DLSS_PLUGIN), '--dlss-sdk-license', str(args.dlss_sdk / 'LICENSE.txt')]
+    if getattr(args, 'prewarmer', None) is not None:  # PRT-B5
+        sys.argv += ['--prewarmer', str(args.prewarmer)]
     module.main()
     folder = args.out / args.name
     shutil.copyfile(args.info, folder / 'BUILD_INFO.json')
@@ -173,6 +177,7 @@ def main():
     p.add_argument('--toolchain-info', type=Path)
     p.add_argument('--dlss-plugin', type=Path, required=True)
     p.add_argument('--dlss-sdk', type=Path, required=True)
+    p.add_argument('--prewarmer', type=Path)  # PRT-B5: tools/ryty_prewarm.exe
     for name in ('source-sha','renderer-sha','renderer-configured-url','renderer-fetch-url','name'):
         p.add_argument('--' + name, required=True)
     args = p.parse_args()

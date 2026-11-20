@@ -353,6 +353,12 @@ namespace RyGT
                       pk == "AUDIT" && pf["direct_sets_spv"] == "15061" && pf["warm_compute_recipes"] == "172",
                       "Prewarm AUDIT line parsed cleanly");
                 Check(!LoaderForm.ParsePrewarmLine("", out pk, out pf), "Empty prewarm line ignored");
+                // PRT-B5 P3: the renderer's graphics prewarm progress lines.
+                Check(LoaderForm.PrewarmStatusText("PRT-PREWARM-PROGRESS 120/19139 phase pipelines translate 25226/25226 compute 3/198") ==
+                      "Precompiling graphics shaders (120/19139)...", "Graphics prewarm progress line shown as n/N");
+                Check(LoaderForm.PrewarmStatusText("PRT-PREWARM-PROGRESS 0/0 phase translate translate 10/25226 compute 0/198") ==
+                      "Precompiling graphics shaders: preparing translations (10/25226)...", "Graphics prewarm translate phase shown");
+                Check(LoaderForm.PrewarmStatusText("something else") == null, "Other lines are not progress");
                 Console.WriteLine("PASS: " + checks + " GT7 setup checks");
                 return 0;
             }

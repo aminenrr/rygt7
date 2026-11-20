@@ -171,6 +171,9 @@ def main():
                         help="a shadNet server folder (shadnet.exe and its DLLs); default this repository's")
     parser.add_argument("--runtime-zstd", type=Path, default=Path(r"C:\msys64\ucrt64\bin\libzstd.dll"),
                         help="the libzstd.dll RyGTServer loads (MSYS2 UCRT64's)")
+    # PRT-B5 (pr-tests): Gustavo Petry's compute prewarm tool (tools/ryty_prewarm, the launcher's
+    # "Precompile shaders before starting game" toggle runs it).
+    parser.add_argument("--prewarmer", type=Path, help="ryty_prewarm.exe built from tools/ryty_prewarm")
     parser.add_argument("--wheel-probe", type=Path,
                         default=REPO / "build" / "core" / "libs" / "prx" / "libScePad" / "ryty-wheel-probe.exe",
                         help="ryty-wheel-probe.exe built from core/libs/prx/libScePad/tools/WheelProbe.cpp "
@@ -209,6 +212,10 @@ def main():
         raise SystemExit("ryty-wheel-probe.exe not found (build the ryty-wheel-probe target): %s"
                          % args.wheel_probe)
     package.put(wheel_probe, "tools\\ryty-wheel-probe.exe")
+    if args.prewarmer is not None:
+        if not args.prewarmer.is_file():
+            raise SystemExit("ryty_prewarm.exe not found (build the ryty_prewarm target): %s" % args.prewarmer)
+        package.put(args.prewarmer, "tools\\ryty_prewarm.exe")
     # FEAT-GTS-265: the HD rumble & adaptive triggers window's Test buttons.
     if args.feel_test is not None:
         if not args.feel_test.is_file():

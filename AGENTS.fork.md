@@ -281,6 +281,59 @@ cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder bu
     gap over 30 ms (ms after start: length, first 16).
   - Bats: b0 = B3 b0 + fade 20 + gap no-reset 2; b1 = b0 + `RYGT_DLSS_TEMPORAL_MVEC=-1,-1` (motion vectors
     flipped, also races); b2 = b0 + `RYGT_DLSS_TEMPORAL_JITTER=-1,-1` (jitter flipped); b3 control.
+- **Build B5 (owner go 2026-11-20 11:41 GMT, plan v2 in the project's b5-plan.md; on Build B4).**
+  Owner reports on B4: texture popping in and out on tracks (only B4; B3 fine); PS4 Pro mode recompiles
+  everything (normal: Pro shader binaries and targets give other pipeline keys); Gustavo Petry's community fork
+  (GustavoPeetry/rygt7 branch optimizations) runs better and fixes the race audio.
+  - shadgt7 `b9dedfde` U1: FIX-227 hull shader writer pass writes all outputs before it returns, taken from
+    RyGT-Team/shadgt7 PR #55 (7adb9477, Daniel Cabral; AMD GPU hang / device lost when GT7 saves a replay).
+  - shadgt7 `984e8c06` R1: PRT-GAP with `RYGT_DLSS_GAP_NO_RESET` unset or 0 is exactly the B3 reset rule again
+    (`temporal.frame + 1 != frame`). Reading the B4 code shows the B4 expression with n = 0 already gave the same
+    result for every frame (the same-frame second pass never enters that branch), and every other B4 renderer change
+    is a log gate whose side effects are only statistics counters; so the popping most likely came from the B4 b0
+    bat's `RYGT_DLSS_GAP_NO_RESET=2`, which d3 (all off) and d0 (GAP=2) now separate.
+    G1 PRT-GTAUTO5 (log only, `RYGT_PRT_GTAUTO5=0` off): every 600 GT Auto frames, which DLSS output the presenter
+    shows (HD UI picture scaled temporal / single / plain, or the presenter's own call temporal / single / side
+    viewport, or none) and the DLSS calls of each kind in those frames (`RytyDlssG::LastCallKind`, `CallCount`).
+    GT Auto = a late composite in the last 2 frames, or the race sign while the display is read back (HD UI on).
+    F1 `RYGT_GTAUTO_GAME_AA=1` (off): GT Auto keeps the game's own AA pass (no temporal replace).
+    F2 `RYGT_GTAUTO_TEMPORAL_PRESENT=1` (off, with G3): the B4 logs show GT Auto rotates three display buffers and
+    G3's early give-up only matched the buffer of the last late composite, so it never fired (0 in every
+    PRT-GTAUTO line): each frame the early display draw scaled the HD UI picture single (the side viewport call)
+    and the late composite copied it back down. F2 matches any display buffer, so the presenter's temporal call is
+    the only DLSS call. The PRT-GTAUTO line now also counts F1 passes kept and F2 early give-ups.
+  - shadgt7 `930c01ef` P3 PRT-PREWARM-ONLY `RYGT_PREWARM_ONLY=1` (set only by the launcher step): GT7.exe starts as
+    in game; right after `GnmDriver::RegisterLib` (presenter, Vulkan instance and device, pipeline cache: the same
+    driver cache keys) `RytyLibraryInitialize` calls `Vulkan::RunPrewarmOnly` and never returns to the runtime,
+    so no game code runs. Manifest pre-translation, the PRT-PREWARM records (`shaders\CUSA03220.prewarm\<gpu>\*.pwk`;
+    the renderer's serial is the hard-coded CUSA03220, no launcher serial needed) and the PERF-GT7-037 compute
+    recipes build on every core at normal priority, no 2 s start delay, no race pause, no E-core confinement;
+    built pipelines are dropped (the driver cache is what counts). Progress `PRT-PREWARM-PROGRESS done/total phase
+    <translate|pipelines|compute|save> translate d/t compute d/t` on stdout and in `<RyGT7>\prewarm.progress`;
+    `prewarm.cancel` stops the builds; then the driver cache is saved, `PRT-PREWARM-DONE ...` written and the
+    process ends with TerminateProcess (0, 2 when cancelled). The SDL window is hidden and not fullscreen.
+    P2: the `RYGT_PIPELINE_PREWARM` switch text names the launcher toggle.
+  - rygt7 P1, Gustavo Petry's four changes (fork commits on upstream 7dbe4e21b, also open upstream PRs), one commit
+    each, author credit in the messages: `2d7c06b` audio mixer + audio thread priority (fa845e6b4, #70), `e928cf1`
+    OVERLAPPED AIO + 4 MiB GuestReadBuffer (7044012f7, #67; `RYGT_STAGED_GUEST_READS` now defaults to 2),
+    `4975ab9` libc shared_mutex paths, AppOverlay memo, RyGT7.ini launch defaults (36c945426, #68), `39750a0`
+    tools/ryty_prewarm compute prewarm + launcher Shaders toggle "Precompile shaders before starting game" (off;
+    c6a2e8e31, #69; launcher 0.1.8; GT7SetupTests.cs conflict: both check sets kept). Not taken: 90fd1726b (his CI
+    and "Modified By" branding) and 986a3fe (his docs). Our CI builds the `ryty_prewarm` target and packages
+    `tools\ryty_prewarm.exe` (build-windows.ps1, assemble.py `--prewarmer`, package_release.py).
+  - rygt7 launcher (same push): Shaders page "Precompile shaders on the splash screen" (`GPU.splash_prewarm`, on;
+    unchecked sends `RYGT_PIPELINE_PREWARM=0`) and "Precompile graphics shaders in the launcher before starting the
+    game" (`GPU.launcher_graphics_prewarm`, off): after the fork's tool (if on), GT7.exe runs hidden with the game's
+    own environment (shared `ApplyRendererEnvironment`) plus `RYGT_PREWARM_ONLY=1`; status "Precompiling graphics
+    shaders (n/N)" from prewarm.progress, Cancel writes prewarm.cancel (killed after 30 s), then the game starts
+    normally and its splash prewarm mostly hits the driver cache.
+  - Skipped: RyGT-Team/rygt7 PR #65 (Mbus shadowing SaveData exports): small (10 .def lines) but it moves 10
+    save-data calls from return-0 stubs to the real libSceSaveData code, its author did not test save persistence
+    in game, and the owner reported no save problem; not worth the risk to the owner's save in a test build.
+    shadgt7 PR #45 skipped (owner). b0 cutscene fixes stay switch-only.
+  - Bats (CRLF): d0 = b0 cutscene set (`RYGT_AVP_HOLD=3`, `RYGT_AVP_INVALIDATE=1`, `RYGT_AVP_PREFILL_MS=100`,
+    `RYGT_AVP_AUDIO_FADEIN_MS=20`, `RYGT_DLSS_GAP_NO_RESET=2`); d1 = d0 + `RYGT_GTAUTO_GAME_AA=1`; d2 = d0 +
+    `RYGT_GTAUTO_TEMPORAL_PRESENT=1`; d3 = all off (control: texture popping gone with GAP unset?).
 - **Build B (shadgt7 `64deefc0`, `56139d6d`, `54ab0de3`, 2026-11-19, owner go 00:56 GMT; on Build C):**
   - PRT-GTAUTO2 `RYGT_HD_RACE_NO_READBACK` (on, =0 old): with HD UI the race HUD flag is never set
     (`hud_depth_drawn` needs `HudSplitOn()`, off under HD UI), so `HdRace()` took GT Auto's 3D car
@@ -353,6 +406,14 @@ default, CI run, test result.
 | 2026-11-19 | rygt7 | fbd5498 | Build B3: AvPlayer frame hold + FIFO pool (`RYGT_AVP_HOLD`), invalidate before write (`RYGT_AVP_INVALIDATE`), audio prefill (`RYGT_AVP_PREFILL_MS`), PRT-AVTEX / PRT-AVAUDIO logs | off (logs on) | CI 44557775316 green, artifact 14550303109 | tested 2026-11-19: b0 cutscene video fixed (no stutter); audio crack at start remains |
 | 2026-11-19 | shadgt7 | d9c5c52c | Build B4: PRT-LOGS old log lines behind `RYGT_LOG_VERBOSE`, watermark only with `RYGT_WATERMARK=1`, PRT-JITTER off, PRT-GAP `RYGT_DLSS_GAP_NO_RESET`, switch entries | off | CI 44583947092 green, artifact 14563361374 | owner test pending |
 | 2026-11-19 | rygt7 | 10d6502 | Build B4: launcher About > Logging toggles (verbose logs, watermark), AvPlayer fade-in `RYGT_AVP_AUDIO_FADEIN_MS`, PRT-AVAUDIO v2 gap list | off | CI 44583947092 green, artifact 14563361374 | owner test pending |
+| 2026-11-20 | shadgt7 | b9dedfde | Build B5 U1: FIX-227 hull shader writer pass writes all outputs (RyGT-Team/shadgt7#55, 7adb9477, Daniel Cabral) | always | B5 CI | pending |
+| 2026-11-20 | shadgt7 | 984e8c06 | Build B5 R1: PRT-GAP unset = exact B3 reset rule; G1 PRT-GTAUTO5 presented-DLSS log; F1 `RYGT_GTAUTO_GAME_AA`; F2 `RYGT_GTAUTO_TEMPORAL_PRESENT` | F1/F2 off, log on | B5 CI | pending |
+| 2026-11-20 | shadgt7 | 930c01ef | Build B5 P3: PRT-PREWARM-ONLY launcher graphics prewarm mode (`RYGT_PREWARM_ONLY`); P2 switch text | off (launcher only) | B5 CI | pending |
+| 2026-11-20 | rygt7 | 2d7c06b | Build B5 P1: Gustavo Petry's SDL single-callback audio mixer + audio thread priority (fork fa845e6b4, RyGT-Team/rygt7#70) | always | B5 CI | pending |
+| 2026-11-20 | rygt7 | e928cf1 | Build B5 P1: Gustavo Petry's OVERLAPPED AIO + 4 MiB GuestReadBuffer (fork 7044012f7, #67) | always | B5 CI | pending |
+| 2026-11-20 | rygt7 | 4975ab9 | Build B5 P1: Gustavo Petry's libc path lock / AppOverlay memo / RyGT7.ini launch defaults (fork 36c945426, #68) | always | B5 CI | pending |
+| 2026-11-20 | rygt7 | 39750a0 | Build B5 P1: Gustavo Petry's tools/ryty_prewarm compute prewarm + launcher toggle (fork c6a2e8e31, #69), launcher 0.1.8 | toggle off | B5 CI | pending |
+| 2026-11-20 | rygt7 | (this commit) | Build B5 P2/P3 launcher toggles (splash prewarm on, launcher graphics prewarm off), CI packages tools/ryty_prewarm.exe, Build B5 docs | P2 on, P3 off | B5 CI | pending |
 | planned | shadgt7 | - | not-buildable prewarm records, from Build B PRT-PREWARM split | - | - | - |
 | planned | shadgt7 | - | tess batching, from Build B PRT-TESS lines | - | - | - |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |

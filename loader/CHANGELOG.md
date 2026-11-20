@@ -12,6 +12,11 @@ CI fails when the two disagree.
   that runs `tools\ryty_prewarm.exe` before launching `GT7.exe` with live progress, clean cancellation,
   incremental SPIR-V store auditing, `.meta` OS page-cache pre-warming, and monotonic `VkPipelineCache`
   compute pipeline warming.
+* PRT-B5 (pr-tests): Shaders page toggles "Precompile shaders on the splash screen" (`GPU.splash_prewarm`,
+  on by default; off sends `RYGT_PIPELINE_PREWARM=0`) and "Precompile graphics shaders in the launcher before
+  starting the game" (`GPU.launcher_graphics_prewarm`, off by default): GT7.exe runs hidden with
+  `RYGT_PREWARM_ONLY=1`, builds the recorded pipelines on every core with "Precompiling graphics shaders (n/N)"
+  and Cancel, then the game starts.
 
 ## 0.1.7 - 2026-11-16
 

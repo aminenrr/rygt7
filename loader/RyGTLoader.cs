@@ -1640,6 +1640,7 @@ namespace RyGT
         string lastPage = "Game";
         volatile bool busy;
         volatile bool prewarmCancelled;
+        volatile bool graphicsPrewarmRunning; // PRT-B5 P3
         Process activePrewarmProcess;
         readonly object prewarmLock = new object();
 
@@ -2473,6 +2474,14 @@ namespace RyGT
             };
             AddOption(shaders, "Precompile shaders before starting game (Vulkan compute pipelines & store audit)", "GPU", "precompile_before_play", false);
             shaders.Controls.Add(Hint("When checked, runs tools\\ryty_prewarm.exe before launching GT7: validates CUSA03220-direct-sets SPIR-V files and warms recorded compute pipelines into CUSA03220.vkpipelinecache (incremental, resumable, cancelable). Graphics pipelines for unseen cars/tracks still compile when first drawn."));
+            // PRT-B5 P2 (pr-tests): the renderer's own pipeline prewarm on the splash screen (PRT-PREWARM,
+            // RYGT_PIPELINE_PREWARM), on by default as before; unchecked sends RYGT_PIPELINE_PREWARM=0.
+            AddOption(shaders, "Precompile shaders on the splash screen (the pipelines recorded while playing, in the background at start)", "GPU", "splash_prewarm", true);
+            shaders.Controls.Add(Hint("Builds every pipeline seen in earlier sessions while the splash screen shows (RYGT_PIPELINE_PREWARM). Turn it off to compare start times."));
+            // PRT-B5 P3 (pr-tests): the same recorded pipelines built in the launcher first, on every core
+            // (GT7.exe in RYGT_PREWARM_ONLY mode, no game running). Off by default.
+            AddOption(shaders, "Precompile graphics shaders in the launcher before starting the game (every CPU core)", "GPU", "launcher_graphics_prewarm", false);
+            shaders.Controls.Add(Hint("Starts the renderer hidden with the same GPU setup as the game, builds the recorded graphics pipelines and compute recipes, saves the shader cache, then starts the game. Shows \"Precompiling graphics shaders (n/N)\" with Cancel. The splash screen step then mostly reads the cache."));
 
 
             // ---- Controls: the controller, keyboard and wheel, drawn (ControlsPage); the controller
@@ -3980,6 +3989,8 @@ namespace RyGT
             DefaultSetting("GPU", "compile_mode", 2);
             DefaultSetting("GPU", "precompile_shaders", false);
             DefaultSetting("GPU", "precompile_before_play", false);
+            DefaultSetting("GPU", "splash_prewarm", true);              // PRT-B5 P2 (pr-tests)
+            DefaultSetting("GPU", "launcher_graphics_prewarm", false);  // PRT-B5 P3 (pr-tests)
             DefaultSetting("General", "show_splash", true);
             DefaultSetting("General", "player_names", "Player 1,Player 2");
             DefaultSetting("Input", "background_controller_input", true);
@@ -4168,6 +4179,21 @@ namespace RyGT
                             return;
                         }
                     }
+                    // PRT-B5 P3 (pr-tests): the launcher's graphics prewarm (GT7.exe, RYGT_PREWARM_ONLY=1).
+                    if (GpuSetting(root, "launcher_graphics_prewarm") is bool && (bool)GpuSetting(root, "launcher_graphics_prewarm"))
+                    {
+                        if (!RunGraphicsPrewarm())
+                        {
+                            BeginInvoke(new Action(delegate
+                            {
+                                busy = false;
+                                SetCancelVisible(false);
+                                RefreshState();
+                                status.Text = "Graphics shader precompilation cancelled (what was built is saved). Press Play.";
+                            }));
+                            return;
+                        }
+                    }
                     prepared = true;
                 }
                 catch (DumpFileException e) { Log("ERROR: " + e.Message); playDumpProblem = e; }
@@ -4208,6 +4234,11 @@ namespace RyGT
             prewarmCancelled = true;
             cancelPrewarm.Enabled = false;
             SetStatus("Cancelling shader precompilation cleanly...");
+            // PRT-B5 P3: GT7.exe in prewarm mode stops at the prewarm.cancel file, saves and exits.
+            if (graphicsPrewarmRunning)
+            {
+                try { File.WriteAllText(Path.Combine(root, "prewarm.cancel"), "cancel"); } catch { }
+            }
             lock (prewarmLock)
             {
                 if (activePrewarmProcess != null)
@@ -4337,6 +4368,208 @@ namespace RyGT
             }
         }
 
+        /// The renderer's environment from the launcher's settings, for the game and (PRT-B5 P3) the
+        /// graphics prewarm, so both set up the same Vulkan device and pipeline cache.
+        static void ApplyRendererEnvironment(string root, ProcessStartInfo start)
+        {
+            start.EnvironmentVariables["RYTY_INTEROP_BASE"] = "8000000000";
+            // PERF-161: GT7's per-frame memory (0x200000000-0x208000000), which the CPU rewrites
+            // every frame and a few compute passes write too, stays in guest memory: kept in a
+            // renderer region, each CPU write faulted (about 60,000 a second) and was copied in.
+            start.EnvironmentVariables["RYGT_NATIVE_INPLACE_RANGES"] = "1020000000+1de000,1020235000+1dd000,1020407000+b000,200000000+8000000";
+            // FIX-213: GT7 reads back what the GPU writes into its CPU pools from 0xe000000000
+            // up (GT Sport's are above 0xf000000000, the renderer's default); kept in a
+            // renderer region, the CPU saw stale data and culled the whole rear-view mirror.
+            start.EnvironmentVariables["RYGT_NATIVE_INPLACE_FROM"] = "e000000000";
+            start.EnvironmentVariables["SHADGT_FPS_LOCK"] = RaceFpsLock(root).ToString();
+            // Shader cache size and the AMD graphics fix from the Graphics page.
+            start.EnvironmentVariables["RYGT_DRIVER_CACHE_MAX_MB"] = DriverCacheMaxMb(root).ToString();
+            start.EnvironmentVariables["RYGT_AMD_SINGLE_SAMPLE_BARYCENTRIC"] =
+                GpuSetting(root, "amd_graphics_fix") is bool && (bool)GpuSetting(root, "amd_graphics_fix") ? "1" : "0";
+            // PERF-GT7-111/117 from the Graphics page: each shader translation leaves a record
+            // (shaders\<serial>.manifest) and its code (shaders\<serial>.capture, this PC's only);
+            // at start, the ones the shader store lacks (after a renderer update) are translated
+            // again in the background, so the races after an update start as warm ones.
+            // Only when checked (like the compile pack below): a launcher script that
+            // sets them itself keeps its setting.
+            // PRT-KEEP (pr-tests): the renderer has them on by default; unchecked turns them off
+            // (unless a script set them already).
+            object pretranslate = GpuSetting(root, "shader_pretranslate");
+            if (!(pretranslate is bool) || (bool)pretranslate)
+            {
+                start.EnvironmentVariables["RYGT_MANIFEST_RECORD"] = "1";
+                start.EnvironmentVariables["RYGT_MANIFEST_PRETRANSLATE"] = "1";
+            }
+            else
+            {
+                foreach (string name in new[] { "RYGT_MANIFEST_RECORD", "RYGT_MANIFEST_PRETRANSLATE" })
+                    if (string.IsNullOrEmpty(start.EnvironmentVariables[name])) start.EnvironmentVariables[name] = "0";
+            }
+            // PERF-GT7-108 from the Graphics page: the pipelines this PC's driver cache lacks (after
+            // a driver update) are compiled at start from the recipes kept in the compile pack.
+            // Only when checked: Jouer-Compile-Pack.cmd sets it itself before starting this launcher.
+            if (GpuSetting(root, "compile_pack") is bool && (bool)GpuSetting(root, "compile_pack"))
+                start.EnvironmentVariables["RYGT_COMPILE_PACK"] = "1";
+            // DLSS frame multiplier from the Graphics page (generated frames, 1-5).
+            start.EnvironmentVariables["RYGT_DLSSG_FRAMES"] = DlssgFrames(root).ToString();
+            // Upscaling quality from the Graphics page (the size DLSS and FSR 3.1 scale to).
+            start.EnvironmentVariables["RYGT_UPSCALE_QUALITY"] = GpuSetting(root, "upscale_quality") as string ?? "auto";
+            // Texture sharpness from the Graphics page (detail levels added to every sampler's bias).
+            start.EnvironmentVariables["RYGT_TEXTURE_LOD_BIAS"] = GpuSetting(root, "texture_lod_bias") as string ?? "0";
+            // FEAT-GT7-181: DLSS texture detail from the Graphics page. Reduced: the bias without its -1;
+            // Off: no bias; Full sets nothing. A renderer without these switches ignores them.
+            string dlssBias, dlssExtra;
+            DlssDetailVariables(GpuSetting(root, "dlss_texture_detail") as string, out dlssBias, out dlssExtra);
+            if (dlssBias != null) start.EnvironmentVariables["RYGT_DLSS_TEMPORAL_MIP_BIAS"] = dlssBias;
+            if (dlssExtra != null) start.EnvironmentVariables["RYGT_DLSS_TEMPORAL_MIP_EXTRA"] = dlssExtra;
+            // PS4 Pro mode from the Graphics page (NEO-GT7). PS4 (off) sets nothing, so a launcher
+            // script's own values stay. The other modes set or remove all three variables themselves:
+            // RYGT_NEO=1 with the checkerboard (4K TV, Full, Custom with its box), plus RYGT_NEO_TV=1080
+            // for the 1080p TV; RYGT_NEO_EXTRAS lists the five other settings when they differ from what
+            // the game picks by itself (none in the PS4 and 4K TV presets, all five in the 1080p TV one).
+            // The modes other than custom are read as the console has them, not from the boxes.
+            string proSetting = GpuSetting(root, "ps4_pro_mode") as string ?? "off";
+            if (proSetting == "4k" || proSetting == "1080p" || proSetting == "full" || proSetting == "custom")
+            {
+                Func<string, bool> proBox = key => { object on = GpuSetting(root, key); return on is bool && (bool)on; };
+                bool custom = proSetting == "custom";
+                bool tv1080 = proSetting == "1080p";
+                bool neo = tv1080 || (custom ? proBox("ps4_pro_checkerboard") : true);
+                if (neo) start.EnvironmentVariables["RYGT_NEO"] = "1";
+                else start.EnvironmentVariables.Remove("RYGT_NEO");
+                if (tv1080) start.EnvironmentVariables["RYGT_NEO_TV"] = "1080";
+                else start.EnvironmentVariables.Remove("RYGT_NEO_TV");
+                var proOptionsOn = new List<string>();
+                var proOptionNames = new[] { "ps4_pro_blur", "blur", "ps4_pro_replays60", "replays60",
+                                             "ps4_pro_replay_blur", "replayblur", "ps4_pro_garage60", "garage60",
+                                             "ps4_pro_lod", "lod" };
+                for (int i = 0; i < proOptionNames.Length; i += 2)
+                {
+                    bool on = custom ? proBox(proOptionNames[i]) : proSetting == "full";
+                    if (on) proOptionsOn.Add(proOptionNames[i + 1]);
+                }
+                if (proOptionsOn.Count != 0) start.EnvironmentVariables["RYGT_NEO_EXTRAS"] = string.Join(",", proOptionsOn);
+                else start.EnvironmentVariables.Remove("RYGT_NEO_EXTRAS");
+            }
+        }
+
+        /// PRT-B5 P3 (pr-tests): GT7.exe started hidden with the game's own environment plus
+        /// RYGT_PREWARM_ONLY=1. The renderer sets up the same Vulkan instance and device as in game, builds
+        /// the recorded pipelines (shaders\CUSA03220.prewarm) and compute recipes on every core, saves
+        /// the driver's pipeline cache and exits before the game's code runs. Progress comes from
+        /// prewarm.progress ("PRT-PREWARM-PROGRESS done/total phase ..."); Cancel writes prewarm.cancel.
+        /// False when cancelled.
+        bool RunGraphicsPrewarm()
+        {
+            string exe = Path.Combine(root, "GT7.exe");
+            if (!File.Exists(exe)) return true;
+            try { if (!GameExe.IsPrepared(exe)) GameExe.Prepare(exe); } catch { }
+            string progressFile = Path.Combine(root, "prewarm.progress");
+            string cancelFile = Path.Combine(root, "prewarm.cancel");
+            try { File.Delete(progressFile); } catch { }
+            try { File.Delete(cancelFile); } catch { }
+            prewarmCancelled = false;
+            graphicsPrewarmRunning = true;
+            SetCancelVisible(true);
+            SetStatus("Precompiling graphics shaders: starting the renderer...");
+            var watch = Stopwatch.StartNew();
+            try
+            {
+                var start = new ProcessStartInfo(exe)
+                {
+                    WorkingDirectory = root,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
+                start.EnvironmentVariables["RYGT_LOG_DIRECTORY"] = LogFiles.PrepareRuntimeLogs(root);
+                ApplyRendererEnvironment(root, start);
+                var launchSettings = new Settings(Path.Combine(root, "RyGT7.ini"));
+                start.EnvironmentVariables["RYGT_LOG_VERBOSE"] = launchSettings.VerboseLogs ? "1" : "0";
+                start.EnvironmentVariables["RYGT_WATERMARK"] = "0";
+                CustomEnvironment.Apply(start, launchSettings.Env);
+                // Last, so no other setting turns it off: this process never runs the game.
+                start.EnvironmentVariables["RYGT_PREWARM_ONLY"] = "1";
+                start.EnvironmentVariables["RYGT_PIPELINE_PREWARM"] = "1";
+                Log("Graphics prewarm: GT7.exe in RYGT_PREWARM_ONLY mode.");
+                using (var proc = Process.Start(start))
+                {
+                    if (proc == null) return true;
+                    string last = "";
+                    DateTime cancelAt = DateTime.MinValue;
+                    while (!proc.WaitForExit(250))
+                    {
+                        string line = ReadLastPrewarmLine(progressFile);
+                        if (line != null && line != last)
+                        {
+                            last = line;
+                            string text = PrewarmStatusText(line);
+                            if (text != null && !prewarmCancelled) SetStatus(text);
+                        }
+                        if (prewarmCancelled && cancelAt == DateTime.MinValue) cancelAt = DateTime.UtcNow;
+                        // A renderer that does not stop within 30 s of Cancel is ended (nothing new is saved then).
+                        if (cancelAt != DateTime.MinValue && DateTime.UtcNow - cancelAt > TimeSpan.FromSeconds(30))
+                        {
+                            try { proc.Kill(); } catch { }
+                            proc.WaitForExit(5000);
+                            break;
+                        }
+                    }
+                    string done = ReadLastPrewarmLine(progressFile);
+                    int code = proc.HasExited ? proc.ExitCode : -1;
+                    Log("Graphics prewarm ended (exit code " + code + ", " + watch.Elapsed.TotalSeconds.ToString("0.0") + " s): " + (done ?? "no progress file"));
+                    if (prewarmCancelled || code == 2) return false;
+                    if (code != 0) Log("Graphics prewarm did not finish normally; starting GT7 anyway (the splash screen step builds what is missing).");
+                    return true;
+                }
+            }
+            catch (Exception e)
+            {
+                Log("Graphics prewarm error (starting GT7 anyway): " + e.Message);
+                return true;
+            }
+            finally
+            {
+                graphicsPrewarmRunning = false;
+                try { File.Delete(cancelFile); } catch { }
+            }
+        }
+
+        static string ReadLastPrewarmLine(string file)
+        {
+            try
+            {
+                using (var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                using (var reader = new StreamReader(stream))
+                {
+                    string line, last = null;
+                    while ((line = reader.ReadLine()) != null)
+                        if (line.StartsWith("PRT-PREWARM-", StringComparison.Ordinal)) last = line.Trim();
+                    return last;
+                }
+            }
+            catch { return null; }
+        }
+
+        /// PRT-B5 P3: the status text for a renderer progress line, or null.
+        internal static string PrewarmStatusText(string line)
+        {
+            if (string.IsNullOrEmpty(line)) return null;
+            if (line.StartsWith("PRT-PREWARM-DONE", StringComparison.Ordinal)) return "Graphics shaders precompiled. Starting GT7...";
+            if (!line.StartsWith("PRT-PREWARM-PROGRESS ", StringComparison.Ordinal)) return null;
+            string[] parts = line.Split(' ');
+            // PRT-PREWARM-PROGRESS <done>/<total> phase <phase> translate <d>/<t> compute <d>/<t>
+            string pipelines = parts.Length > 1 ? parts[1] : "0/0";
+            string phase = parts.Length > 3 ? parts[3] : "";
+            string translate = parts.Length > 5 ? parts[5] : "0/0";
+            string compute = parts.Length > 7 ? parts[7] : "0/0";
+            if (phase == "translate") return "Precompiling graphics shaders: preparing translations (" + translate + ")...";
+            if (phase == "pipelines") return "Precompiling graphics shaders (" + pipelines + ")...";
+            if (phase == "compute") return "Precompiling compute shaders (" + compute + ")...";
+            if (phase == "save") return "Saving the shader cache...";
+            return null;
+        }
+
         /// Starts GT7.exe with session log rotation and waits for GPU recovery if Vulkan loses
         /// its device.
         static void StartGame(string root)
@@ -4370,85 +4603,11 @@ namespace RyGT
                         var start = new ProcessStartInfo(exe)
                         { WorkingDirectory = root, UseShellExecute = false };
                         start.EnvironmentVariables["RYGT_LOG_DIRECTORY"] = logDirectory;
-                        start.EnvironmentVariables["RYTY_INTEROP_BASE"] = "8000000000";
-                        // PERF-161: GT7's per-frame memory (0x200000000-0x208000000), which the CPU rewrites
-                        // every frame and a few compute passes write too, stays in guest memory: kept in a
-                        // renderer region, each CPU write faulted (about 60,000 a second) and was copied in.
-                        start.EnvironmentVariables["RYGT_NATIVE_INPLACE_RANGES"] = "1020000000+1de000,1020235000+1dd000,1020407000+b000,200000000+8000000";
-                        // FIX-213: GT7 reads back what the GPU writes into its CPU pools from 0xe000000000
-                        // up (GT Sport's are above 0xf000000000, the renderer's default); kept in a
-                        // renderer region, the CPU saw stale data and culled the whole rear-view mirror.
-                        start.EnvironmentVariables["RYGT_NATIVE_INPLACE_FROM"] = "e000000000";
-                        start.EnvironmentVariables["SHADGT_FPS_LOCK"] = RaceFpsLock(root).ToString();
-                        // Shader cache size and the AMD graphics fix from the Graphics page.
-                        start.EnvironmentVariables["RYGT_DRIVER_CACHE_MAX_MB"] = DriverCacheMaxMb(root).ToString();
-                        start.EnvironmentVariables["RYGT_AMD_SINGLE_SAMPLE_BARYCENTRIC"] =
-                            GpuSetting(root, "amd_graphics_fix") is bool && (bool)GpuSetting(root, "amd_graphics_fix") ? "1" : "0";
-                        // PERF-GT7-111/117 from the Graphics page: each shader translation leaves a record
-                        // (shaders\<serial>.manifest) and its code (shaders\<serial>.capture, this PC's only);
-                        // at start, the ones the shader store lacks (after a renderer update) are translated
-                        // again in the background, so the races after an update start as warm ones.
-                        // Only when checked (like the compile pack below): a launcher script that
-                        // sets them itself keeps its setting.
-                        // PRT-KEEP (pr-tests): the renderer has them on by default; unchecked turns them off
-                        // (unless a script set them already).
-                        object pretranslate = GpuSetting(root, "shader_pretranslate");
-                        if (!(pretranslate is bool) || (bool)pretranslate)
-                        {
-                            start.EnvironmentVariables["RYGT_MANIFEST_RECORD"] = "1";
-                            start.EnvironmentVariables["RYGT_MANIFEST_PRETRANSLATE"] = "1";
-                        }
-                        else
-                        {
-                            foreach (string name in new[] { "RYGT_MANIFEST_RECORD", "RYGT_MANIFEST_PRETRANSLATE" })
-                                if (string.IsNullOrEmpty(start.EnvironmentVariables[name])) start.EnvironmentVariables[name] = "0";
-                        }
-                        // PERF-GT7-108 from the Graphics page: the pipelines this PC's driver cache lacks (after
-                        // a driver update) are compiled at start from the recipes kept in the compile pack.
-                        // Only when checked: Jouer-Compile-Pack.cmd sets it itself before starting this launcher.
-                        if (GpuSetting(root, "compile_pack") is bool && (bool)GpuSetting(root, "compile_pack"))
-                            start.EnvironmentVariables["RYGT_COMPILE_PACK"] = "1";
-                        // DLSS frame multiplier from the Graphics page (generated frames, 1-5).
-                        start.EnvironmentVariables["RYGT_DLSSG_FRAMES"] = DlssgFrames(root).ToString();
-                        // Upscaling quality from the Graphics page (the size DLSS and FSR 3.1 scale to).
-                        start.EnvironmentVariables["RYGT_UPSCALE_QUALITY"] = GpuSetting(root, "upscale_quality") as string ?? "auto";
-                        // Texture sharpness from the Graphics page (detail levels added to every sampler's bias).
-                        start.EnvironmentVariables["RYGT_TEXTURE_LOD_BIAS"] = GpuSetting(root, "texture_lod_bias") as string ?? "0";
-                        // FEAT-GT7-181: DLSS texture detail from the Graphics page. Reduced: the bias without its -1;
-                        // Off: no bias; Full sets nothing. A renderer without these switches ignores them.
-                        string dlssBias, dlssExtra;
-                        DlssDetailVariables(GpuSetting(root, "dlss_texture_detail") as string, out dlssBias, out dlssExtra);
-                        if (dlssBias != null) start.EnvironmentVariables["RYGT_DLSS_TEMPORAL_MIP_BIAS"] = dlssBias;
-                        if (dlssExtra != null) start.EnvironmentVariables["RYGT_DLSS_TEMPORAL_MIP_EXTRA"] = dlssExtra;
-                        // PS4 Pro mode from the Graphics page (NEO-GT7). PS4 (off) sets nothing, so a launcher
-                        // script's own values stay. The other modes set or remove all three variables themselves:
-                        // RYGT_NEO=1 with the checkerboard (4K TV, Full, Custom with its box), plus RYGT_NEO_TV=1080
-                        // for the 1080p TV; RYGT_NEO_EXTRAS lists the five other settings when they differ from what
-                        // the game picks by itself (none in the PS4 and 4K TV presets, all five in the 1080p TV one).
-                        // The modes other than custom are read as the console has them, not from the boxes.
-                        string proSetting = GpuSetting(root, "ps4_pro_mode") as string ?? "off";
-                        if (proSetting == "4k" || proSetting == "1080p" || proSetting == "full" || proSetting == "custom")
-                        {
-                            Func<string, bool> proBox = key => { object on = GpuSetting(root, key); return on is bool && (bool)on; };
-                            bool custom = proSetting == "custom";
-                            bool tv1080 = proSetting == "1080p";
-                            bool neo = tv1080 || (custom ? proBox("ps4_pro_checkerboard") : true);
-                            if (neo) start.EnvironmentVariables["RYGT_NEO"] = "1";
-                            else start.EnvironmentVariables.Remove("RYGT_NEO");
-                            if (tv1080) start.EnvironmentVariables["RYGT_NEO_TV"] = "1080";
-                            else start.EnvironmentVariables.Remove("RYGT_NEO_TV");
-                            var proOptionsOn = new List<string>();
-                            var proOptionNames = new[] { "ps4_pro_blur", "blur", "ps4_pro_replays60", "replays60",
-                                                         "ps4_pro_replay_blur", "replayblur", "ps4_pro_garage60", "garage60",
-                                                         "ps4_pro_lod", "lod" };
-                            for (int i = 0; i < proOptionNames.Length; i += 2)
-                            {
-                                bool on = custom ? proBox(proOptionNames[i]) : proSetting == "full";
-                                if (on) proOptionsOn.Add(proOptionNames[i + 1]);
-                            }
-                            if (proOptionsOn.Count != 0) start.EnvironmentVariables["RYGT_NEO_EXTRAS"] = string.Join(",", proOptionsOn);
-                            else start.EnvironmentVariables.Remove("RYGT_NEO_EXTRAS");
-                        }
+                        ApplyRendererEnvironment(root, start); // PRT-B5: shared with the graphics prewarm
+                        // PRT-B5 P2 (pr-tests): the splash screen prewarm, on by default; unchecked turns it off.
+                        object splashPrewarm = GpuSetting(root, "splash_prewarm");
+                        if (splashPrewarm is bool && !(bool)splashPrewarm && string.IsNullOrEmpty(start.EnvironmentVariables["RYGT_PIPELINE_PREWARM"]))
+                            start.EnvironmentVariables["RYGT_PIPELINE_PREWARM"] = "0";
                         // FEAT-GT7-187: the trophy key (a temp file only this user reads) and the pop-up switch.
                         TrophyStore.DeleteKeyFile(root, trophyKeyFile);
                         trophyKeyFile = TrophyStore.ApplyEnvironment(root, start);
