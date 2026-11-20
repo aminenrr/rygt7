@@ -282,6 +282,7 @@ cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder bu
   - Bats: b0 = B3 b0 + fade 20 + gap no-reset 2; b1 = b0 + `RYGT_DLSS_TEMPORAL_MVEC=-1,-1` (motion vectors
     flipped, also races); b2 = b0 + `RYGT_DLSS_TEMPORAL_JITTER=-1,-1` (jitter flipped); b3 control.
 - **Build B5 (owner go 2026-11-20 11:41 GMT, plan v2 in the project's b5-plan.md; on Build B4).**
+  CI 44732322761 green 2026-11-20 (attempt 2 after the 403), artifact 14628929327.
   Owner reports on B4: texture popping in and out on tracks (only B4; B3 fine); PS4 Pro mode recompiles
   everything (normal: Pro shader binaries and targets give other pipeline keys); Gustavo Petry's community fork
   (GustavoPeetry/rygt7 branch optimizations) runs better and fixes the race audio.
@@ -406,14 +407,14 @@ default, CI run, test result.
 | 2026-11-19 | rygt7 | fbd5498 | Build B3: AvPlayer frame hold + FIFO pool (`RYGT_AVP_HOLD`), invalidate before write (`RYGT_AVP_INVALIDATE`), audio prefill (`RYGT_AVP_PREFILL_MS`), PRT-AVTEX / PRT-AVAUDIO logs | off (logs on) | CI 44557775316 green, artifact 14550303109 | tested 2026-11-19: b0 cutscene video fixed (no stutter); audio crack at start remains |
 | 2026-11-19 | shadgt7 | d9c5c52c | Build B4: PRT-LOGS old log lines behind `RYGT_LOG_VERBOSE`, watermark only with `RYGT_WATERMARK=1`, PRT-JITTER off, PRT-GAP `RYGT_DLSS_GAP_NO_RESET`, switch entries | off | CI 44583947092 green, artifact 14563361374 | owner test pending |
 | 2026-11-19 | rygt7 | 10d6502 | Build B4: launcher About > Logging toggles (verbose logs, watermark), AvPlayer fade-in `RYGT_AVP_AUDIO_FADEIN_MS`, PRT-AVAUDIO v2 gap list | off | CI 44583947092 green, artifact 14563361374 | owner test pending |
-| 2026-11-20 | shadgt7 | b9dedfde | Build B5 U1: FIX-227 hull shader writer pass writes all outputs (RyGT-Team/shadgt7#55, 7adb9477, Daniel Cabral) | always | B5 CI | pending |
-| 2026-11-20 | shadgt7 | 984e8c06 | Build B5 R1: PRT-GAP unset = exact B3 reset rule; G1 PRT-GTAUTO5 presented-DLSS log; F1 `RYGT_GTAUTO_GAME_AA`; F2 `RYGT_GTAUTO_TEMPORAL_PRESENT` | F1/F2 off, log on | B5 CI | pending |
-| 2026-11-20 | shadgt7 | 930c01ef | Build B5 P3: PRT-PREWARM-ONLY launcher graphics prewarm mode (`RYGT_PREWARM_ONLY`); P2 switch text | off (launcher only) | B5 CI | pending |
-| 2026-11-20 | rygt7 | 2d7c06b | Build B5 P1: Gustavo Petry's SDL single-callback audio mixer + audio thread priority (fork fa845e6b4, RyGT-Team/rygt7#70) | always | B5 CI | pending |
-| 2026-11-20 | rygt7 | e928cf1 | Build B5 P1: Gustavo Petry's OVERLAPPED AIO + 4 MiB GuestReadBuffer (fork 7044012f7, #67) | always | B5 CI | pending |
-| 2026-11-20 | rygt7 | 4975ab9 | Build B5 P1: Gustavo Petry's libc path lock / AppOverlay memo / RyGT7.ini launch defaults (fork 36c945426, #68) | always | B5 CI | pending |
-| 2026-11-20 | rygt7 | 39750a0 | Build B5 P1: Gustavo Petry's tools/ryty_prewarm compute prewarm + launcher toggle (fork c6a2e8e31, #69), launcher 0.1.8 | toggle off | B5 CI | pending |
-| 2026-11-20 | rygt7 | (this commit) | Build B5 P2/P3 launcher toggles (splash prewarm on, launcher graphics prewarm off), CI packages tools/ryty_prewarm.exe, Build B5 docs | P2 on, P3 off | B5 CI | pending |
+| 2026-11-20 | shadgt7 | b9dedfde | Build B5 U1: FIX-227 hull shader writer pass writes all outputs (RyGT-Team/shadgt7#55, 7adb9477, Daniel Cabral) | always | CI 44732322761 green (attempt 2 after 403), artifact 14628929327 | owner test pending |
+| 2026-11-20 | shadgt7 | 984e8c06 | Build B5 R1: PRT-GAP unset = exact B3 reset rule; G1 PRT-GTAUTO5 presented-DLSS log; F1 `RYGT_GTAUTO_GAME_AA`; F2 `RYGT_GTAUTO_TEMPORAL_PRESENT` | F1/F2 off, log on | CI 44732322761 green (attempt 2 after 403), artifact 14628929327 | owner test pending |
+| 2026-11-20 | shadgt7 | 930c01ef | Build B5 P3: PRT-PREWARM-ONLY launcher graphics prewarm mode (`RYGT_PREWARM_ONLY`); P2 switch text | off (launcher only) | CI 44732322761 green (attempt 2 after 403), artifact 14628929327 | owner test pending |
+| 2026-11-20 | rygt7 | 2d7c06b | Build B5 P1: Gustavo Petry's SDL single-callback audio mixer + audio thread priority (fork fa845e6b4, RyGT-Team/rygt7#70) | always | CI 44732322761 green (attempt 2 after 403), artifact 14628929327 | owner test pending |
+| 2026-11-20 | rygt7 | e928cf1 | Build B5 P1: Gustavo Petry's OVERLAPPED AIO + 4 MiB GuestReadBuffer (fork 7044012f7, #67) | always | CI 44732322761 green (attempt 2 after 403), artifact 14628929327 | owner test pending |
+| 2026-11-20 | rygt7 | 4975ab9 | Build B5 P1: Gustavo Petry's libc path lock / AppOverlay memo / RyGT7.ini launch defaults (fork 36c945426, #68) | always | CI 44732322761 green (attempt 2 after 403), artifact 14628929327 | owner test pending |
+| 2026-11-20 | rygt7 | 39750a0 | Build B5 P1: Gustavo Petry's tools/ryty_prewarm compute prewarm + launcher toggle (fork c6a2e8e31, #69), launcher 0.1.8 | toggle off | CI 44732322761 green (attempt 2 after 403), artifact 14628929327 | owner test pending |
+| 2026-11-20 | rygt7 | 1b4fbb5 | Build B5 P2/P3 launcher toggles (splash prewarm on, launcher graphics prewarm off), CI packages tools/ryty_prewarm.exe, Build B5 docs | P2 on, P3 off | CI 44732322761 green (attempt 2 after 403), artifact 14628929327 | owner test pending |
 | planned | shadgt7 | - | not-buildable prewarm records, from Build B PRT-PREWARM split | - | - | - |
 | planned | shadgt7 | - | tess batching, from Build B PRT-TESS lines | - | - | - |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
