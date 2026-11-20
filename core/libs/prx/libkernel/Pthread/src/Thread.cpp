@@ -1,5 +1,5 @@
-#include "../include/Pthread.hpp"
-#include "../include/ThreadLifecycle.hpp"
+#include "prx/libkernel/Pthread/include/Pthread.hpp"
+#include "prx/libkernel/Pthread/include/ThreadLifecycle.hpp"
 #include "prx/libc/include/General.hpp"
 #include "prx/libkernel/KernelErrors.hpp"
 #include "prx/libc/include/CpuTopology.hpp"
@@ -133,6 +133,75 @@ static std::uint64_t JobWorkerMask() {
     return mask;
 }
 
+static bool IsBackgroundWorkerName(const std::string& name) {
+    return name.rfind("Job", 0) == 0 ||
+           name.rfind("BPE", 0) == 0 ||
+           name.rfind("Worker", 0) == 0 ||
+           name.rfind("Compile", 0) == 0 ||
+           name.rfind("shadGT", 0) == 0;
+}
+
+static bool IsAudioIoThreadName(const std::string& name) {
+    return name.rfind("SceSndzAudioOut", 0) == 0 ||
+           name.rfind("SceSndzAudio3d", 0) == 0 ||
+           name.rfind("Bink Audio", 0) == 0 ||
+           name.rfind("AudioOut", 0) == 0 ||
+           name.rfind("Audio3d", 0) == 0;
+}
+
+static bool IsAudioDspThreadName(const std::string& name) {
+    return name.rfind("SceSndzRender", 0) == 0 ||
+           name.rfind("SceSndzUpdate", 0) == 0 ||
+           name.rfind("sndz_stream", 0) == 0;
+}
+
+static bool KernelThreadPrioEnabled() {
+    static const bool enabled = [] {
+        const char* env = std::getenv("RYGT_KERNEL_THREAD_PRIO");
+        return env == nullptr || env[0] != '0';
+    }();
+    return enabled;
+}
+
+static void ApplyGuestThreadPriority(const PthreadPrivate& thread, void* handle) {
+    if (!KernelThreadPrioEnabled()) return;
+    HANDLE target = handle ? static_cast<HANDLE>(handle) : GetCurrentThread();
+    if (!target) return;
+
+    int winPrio = THREAD_PRIORITY_NORMAL;
+    bool apply = false;
+
+    if (IsAudioIoThreadName(thread.name)) {
+        winPrio = THREAD_PRIORITY_HIGHEST;
+        apply = true;
+    } else if (IsAudioDspThreadName(thread.name)) {
+        winPrio = THREAD_PRIORITY_ABOVE_NORMAL;
+        apply = true;
+    } else if (!IsBackgroundWorkerName(thread.name)) {
+        const int prio = thread.priority.load(std::memory_order_relaxed);
+        if (prio > 0 && prio <= 350) {
+            winPrio = THREAD_PRIORITY_HIGHEST;
+            apply = true;
+        } else if (prio > 350 && prio <= 697) {
+            winPrio = THREAD_PRIORITY_ABOVE_NORMAL;
+            apply = true;
+        } else if (prio >= 750) {
+            winPrio = THREAD_PRIORITY_LOWEST;
+            apply = true;
+        } else if (prio >= 720) {
+            winPrio = THREAD_PRIORITY_BELOW_NORMAL;
+            apply = true;
+        }
+    }
+
+    if (apply) {
+        const int cur = GetThreadPriority(target);
+        if (cur != THREAD_PRIORITY_ERROR_RETURN && cur != winPrio) {
+            SetThreadPriority(target, winPrio);
+        }
+    }
+}
+
 static void ApplyJobAffinity(PthreadPrivate& thread, void* handle) {
     if (thread.name.compare(0, std::strlen(JOB_WORKER_PREFIX), JOB_WORKER_PREFIX) != 0) return;
     const auto mask = JobWorkerMask();
@@ -174,6 +243,7 @@ static unsigned __stdcall StartNativeThread(void* opaque) {
             SetThreadDescription(GetCurrentThread(), description.c_str());
             ApplyJobAffinity(*self, nullptr);
         }
+        ApplyGuestThreadPriority(*self, nullptr);
         args->initialized.set_value();
     } catch (...) {
         args->initialized.set_exception(std::current_exception());
@@ -403,6 +473,7 @@ int APS5_VABI scePthreadRename(Pthread thread, const char* name) {
     const std::wstring description(thread->name.begin(), thread->name.end());
     SetThreadDescription(static_cast<HANDLE>(thread->nativeHandle), description.c_str());
     ApplyJobAffinity(*thread, thread->nativeHandle);
+    ApplyGuestThreadPriority(*thread, thread->nativeHandle);
 #endif
     return SCE_OK;
 }
@@ -430,6 +501,12 @@ int APS5_VABI scePthreadSetcanceltype(int type, int* old_type) {
 int APS5_VABI scePthreadSetprio(Pthread thread, int prio) {
     if (!thread) return SCE_KERNEL_ERROR_EINVAL;
     thread->priority.store(prio, std::memory_order_relaxed);
+#ifdef _WIN32
+    {
+        std::lock_guard lock(thread->nameLock);
+        ApplyGuestThreadPriority(*thread, thread->nativeHandle);
+    }
+#endif
     return SCE_OK;
 }
 
