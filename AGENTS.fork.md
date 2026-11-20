@@ -246,10 +246,10 @@ cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder bu
   upload it for a queued frame. The native path already re-uploads on write faults (`OnCpuWrite`). A jitter
   scale switch already existed: `RYGT_DLSS_TEMPORAL_JITTER=x,y` (ryty_dlssg.cpp). b0 PRT-JITTER showed 5 to
   10 history resets per 600 GT Auto frames.
-  - rygt7 `libSceAvPlayer.native/Export.cpp`: `RYGT_AVP_HOLD=N` (off): shown buffers held N more takes
+  - rygt7 `libSceAvPlayer.native/Export.cpp`: `RYGT_AVP_HOLD=N` (off; 3 since Round 2): shown buffers held N more takes
     (`ReleaseShown`, `heldVideo`), free pool taken oldest first, N capped at buffers minus 3.
-    `RYGT_AVP_INVALIDATE=1` (off): `RytyGpuInvalidateMemory` before `StoreVideo`. `RYGT_AVP_PREFILL_MS=N`
-    (off, max 400): `BeginPlayback` waits (500 ms cap) for N ms of audio + 1 picture, then restarts the clock.
+    `RYGT_AVP_INVALIDATE=1` (off; on by default since Round 2): `RytyGpuInvalidateMemory` before `StoreVideo`. `RYGT_AVP_PREFILL_MS=N`
+    (off, max 400; 100 since Round 2): `BeginPlayback` waits (500 ms cap) for N ms of audio + 1 picture, then restarts the clock.
   - Logs (always on, log only): `[AVP] PRT-AVTEX 2 s:` renderer uploads (luma = at a buffer start, all),
     write faults, held/free/queued, buffers rewritten within 20/50 ms of being shown. `[AVP] PRT-AVAUDIO`
     once 5 s after start: pulls, empty pulls, lowest queued ms, pull gaps > 30 ms, first pull delay,
@@ -395,8 +395,8 @@ cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder bu
   pictures skipped in the race", a depth picture skipped 416 times). 40 caught `read-write alias of
   shared guest memory ... not one contiguous run` throws on GpuRecorder in stderr (shadGT's own, watch).
   shadGT logs no fps/VRAM line, so no fps compare vs B5 Pro (37 to 46 fps, 7.3 GB).
-- **Launcher graphics prewarm toggle must stay OFF on Round 1** (shadGT has no RYGT_PREWARM_ONLY).
-- **Round 2 (owner list 2026-11-20 17:36 GMT, NOT BUILT, needs owner go; one CI run):**
+- **Launcher graphics prewarm toggle must stay OFF on Round 1** (shadGT has no RYGT_PREWARM_ONLY). Round 2 adds it.
+- **Round 2 (owner list 2026-11-20 17:36 GMT; owner go 2026-11-20 18:14 GMT, see Round 2 build below):**
   1. Shader precompile port to shadGT pr-tests: PRT-PREWARM (shadgt7 `d0235932`, `50721c9b` PRT-KEEP),
      splash prewarm + splash bar (PRT-SPLASH), launcher prewarm-only mode (shadgt7 `930c01ef`,
      `RYGT_PREWARM_ONLY=1`). Check first what shadGT already has (PERF-032 store, PERF-GT7-117
@@ -418,6 +418,38 @@ cold cache): median frame >16.7 ms in 280 of 337 ten-second windows; recorder bu
   8. Launcher opens without Play and gear buttons (B5 regression, rygt7 `1b4fbb5`): HomeView.OnLayout
      skips `!button.Visible`, but every button reads hidden before the form shows. Fix: track the wanted
      visibility in a flag instead of reading Visible.
+- **Round 2 build (owner go 2026-11-20 18:14 to 18:17 GMT):**
+  - Decisions: item 1 route (a), port shadgt7 PRT-PREWARM, PRT-KEEP, PRT-KEYNORM, PRT-SPLASH,
+    PRT-PREWARM-ONLY and the PRT-PERF line (not PRT-ECORE, not PRT-SAMPLER) as their own RYGT_* path;
+    shadGT's own GT7 prewarm (PERF-038, `SHADGT_PREWARM`, title_defaults.h stored_pipelines_prebuilt=false)
+    stays off. Item 2 log only. Item 3 in. Item 4 deferred until the owner tests the new prewarm. Item 5
+    Auto = total VRAM minus 1024 MB on discrete cards (7168 MB on the 8 GB card).
+  - 1 PRT-PREWARM port (shadGT vk_pipeline_cache, build_queue.h, diagnostics.h, ryty_entry.cpp, sdl_window.cpp,
+    thread.cpp, vk_scheduler): records each built pipeline in shaders\<serial>.prewarm\<vendor-device>\*.pwk
+    (layout 2, shadgt7 files ignored), builds them at the next start after the manifest pretranslate, paused
+    in races; fragment stage required. Switches `RYGT_PIPELINE_PREWARM` and `RYGT_PIPELINE_KEY_NORMALIZE`
+    (on in GT7 only, =0 off, =1 any game), `RYGT_SPLASH_SHADER_PROGRESS` (on), `RYGT_PREWARM_ONLY`
+    (launcher only), `RYGT_PREWARM_DIRTY_MARK` (on: a session that records a new pipeline creates
+    prewarm.dirty beside the exe), `RYGT_PERF_LINE` (on, 10 s line). Risk: builds with the same
+    preloading constructor as PERF-038, which lost the device at the GT7 title on an RTX 4070.
+  - 2 PRT-SRTUSE (shadGT srt_walker_storage.h, flatten_extended_userdata_pass.cpp): logs
+    `PRT-SRTUSE: SRT walker code uses X MB reserved, Y MB live of Z MB` every 16 MB and `SRT walker refused`
+    on a refused lease. `RYGT_SRT_USE_LOG` (on, =0 off). No fix.
+  - 3 PRT-WARMSKIP (rygt7 loader/RyGTLoader.cs): after a clean launcher pass (exit 0, last line
+    PRT-PREWARM-DONE) writes prewarm.stamp (size + time of libs\libSceVideoOut.prx) and deletes
+    prewarm.dirty; the next launch skips the pass when the stamp matches and prewarm.dirty is absent.
+    `RYGT_PREWARM_WARM_SKIP=0` always runs.
+  - 5 PRT-VRAMAUTO (shadGT vk_instance.cpp/.h): Auto on a discrete GPU = max(driver budget, device-local
+    total minus `RYGT_VRAM_AUTO_RESERVE_MB`, default 1024, 0 = old Auto) when the total exceeds reserve + 1 GB.
+    Logs `PRT-VRAMAUTO: Auto X MB`. FIX-GT7-030 kept textures (half the budget) rise with it.
+  - 6 Trophies renderer part (shadgt7 `9767f071` onto shadGT): ryty_app0, ryty_trophy, trophy toast,
+    np_trophy, np shims, stubs; app0 lookups via Common::App0Folder (app0\<serial> or app0) and
+    Common::RygtIniPath. Switches `RYGT_SCE_SYS_LAYERS`, `RYGT_TROPHY_TOAST`, `RYGT_TROPHY_TOAST_TEST`,
+    `RYGT_TROPHY_PROGRESS_SD`, `RYGT_TROPHY_KEY_FILE`.
+  - 7 PRT-AVDEF (rygt7 Export.cpp): `RYGT_AVP_HOLD` 3, `RYGT_AVP_INVALIDATE` on, `RYGT_AVP_PREFILL_MS` 100,
+    `RYGT_AVP_AUDIO_FADEIN_MS` 20 by default; `=0` turns each off.
+  - 8 PRT-HOMEBTN (rygt7 loader/RyGTLoader.cs): GlowButton keeps the wanted visibility from SetVisibleCore
+    (`Wanted`); HomeView.OnLayout skips only `!button.Wanted`.
 - **Still parked:** tess (stage not translated + FIX-227 barrier batching), dynamic topology (low),
   shadgt7 #45, rygt7 #65, Pro mode sharpen/checkerboard resolve check, garage nvoglv64.dll crash (watch).
 
@@ -461,6 +493,12 @@ default, CI run, test result.
 | 2026-11-20 | rygt7 | 1b4fbb5 | Build B5 P2/P3 launcher toggles (splash prewarm on, launcher graphics prewarm off), CI packages tools/ryty_prewarm.exe, Build B5 docs | P2 on, P3 off | CI 44732322761 green (attempt 2 after 403), artifact 14628929327 | owner test pending |
 | 2026-11-20 | shadgt7 | c42b3464 | Build B6: GT Auto fixes off by default after the owner's B5 test (d1 game AA soft garage, d2 aliasing back; owner: not worth it, keep DLSS elsewhere safe): `RYGT_HD_UI_LATE_TEMPORAL`, `RYGT_HD_UI_LATE_GIVE_UP`, `RYGT_HD_RACE_NO_READBACK`, `RYGT_HD_RACE_HOLD` (30 to 0), `RYGT_PRT_GTAUTO5` log; F1/F2 stay off | off (=1 on, HOLD=frames) | B6 CI pending | GT Auto work dropped by owner 2026-11-20 |
 | 2026-11-20 | rygt7 | 5c081b7 | PRT-SHADGT R1: CI renderer moved from aminenrr/shadgt7 pr-tests to aminenrr/shadGT pr-tests (= upstream RyGT-Team/shadGT ryty-gpu 62059d8, no changes). Owner focus is PS4 Pro mode; shadgt7-only work (HD UI, DLSS, GT Auto, PRT-PREWARM renderer side) not carried yet; renderer-side prewarm port is Round 2 | - | R1 CI 44766427677 green, artifact 14647524635 | launcher graphics prewarm toggle must stay off (renderer has no prewarm-only mode yet) |
+| 2026-11-20 | shadGT | ecfd132e | Round 2 item 6: PRT-TROPHY trophies renderer part from shadgt7 `9767f071` (app0 via App0Folder + RygtIniPath) (`RYGT_SCE_SYS_LAYERS`, `RYGT_TROPHY_TOAST`, `RYGT_TROPHY_TOAST_TEST`, `RYGT_TROPHY_PROGRESS_SD`, `RYGT_TROPHY_KEY_FILE`) | on (TOAST_TEST off) | R2 CI pending | pending |
+| 2026-11-20 | shadGT | 040a4ba6 | Round 2 item 2: PRT-SRTUSE walker use log every 16 MB + refused leases (`RYGT_SRT_USE_LOG`) | on (=0 off) | R2 CI pending | pending |
+| 2026-11-20 | shadGT | 3ad40e69 | Round 2 item 5: PRT-VRAMAUTO Auto = device local minus reserve on discrete GPUs (`RYGT_VRAM_AUTO_RESERVE_MB`) | 1024 (0 = old) | R2 CI pending | pending |
+| 2026-11-20 | shadGT | 33b7a131 | Round 2 item 1: PRT-PREWARM port (record + prewarm, KEYNORM, splash bar, prewarm-only, prewarm.dirty, PRT-PERF line) (`RYGT_PIPELINE_PREWARM`, `RYGT_PIPELINE_KEY_NORMALIZE`, `RYGT_SPLASH_SHADER_PROGRESS`, `RYGT_PREWARM_ONLY`, `RYGT_PREWARM_DIRTY_MARK`, `RYGT_PERF_LINE`) | GT7 on (=0 off); PREWARM_ONLY launcher only | R2 CI pending | pending |
+| 2026-11-20 | shadGT | b026dbf3 | Round 2 switch entries (incl. `RYGT_AVP_*` defaults, `RYGT_PREWARM_WARM_SKIP`) | - | R2 CI pending | - |
+| 2026-11-20 | rygt7 | 1f6a94d | Round 2 items 3, 7, 8: PRT-WARMSKIP (`RYGT_PREWARM_WARM_SKIP`), PRT-AVDEF (`RYGT_AVP_HOLD` 3, `RYGT_AVP_INVALIDATE` on, `RYGT_AVP_PREFILL_MS` 100, `RYGT_AVP_AUDIO_FADEIN_MS` 20), PRT-HOMEBTN | on (=0 off) | R2 CI pending | pending |
 | planned | shadgt7 | - | not-buildable prewarm records, from Build B PRT-PREWARM split | - | - | - |
 | planned | shadgt7 | - | tess batching, from Build B PRT-TESS lines | - | - | - |
 | planned | shadgt7 | - | shared manifest, load-screen background translate | off | - | - |
