@@ -1,5 +1,7 @@
 # AGENTS.fork.md — branch `pr-tests` (aminenrr's RyGT7 fork)
 
+**Moved 2026-11-21: this fork is frozen. Current notes live in aminenrr/RyGT pr-tests AGENTS.fork.md.**
+
 Context for any agent (human or AI) working on this branch. Written 2026-11-14.
 
 ## What this branch is
