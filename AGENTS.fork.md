@@ -66,25 +66,50 @@ Last build: shadGT 6d202135, RyGT 47cfc6e, CI run 45229829369. Later RyGT commit
 | Cockpit view | 5 to 10 fps lower than other views. In races GPU busy 80 to 88%, GpuRecorder/VkCommands/Binder 60 to 82% each (one core = 100%). |
 | Settings | 5.1 audio and display calibration stick. Opening Movie does not (parked). |
 
-## Round 11 (owner OK 2026-11-23 20:26 GMT, built shadGT fe7fd8e; items 7-9 added: FENCESITE, SUBMITS, VRAMTRIM step)
-Logs: work/logs/r10 in the Hark project (stdout has no clock; PRT-PERF every 10 s, start about 19:33:45).
-1. PRT-HITCHLOG (diag, `RYGT_HITCH_LOG`, GT7 on): every frame of 50 ms+ logs local clock HH:MM:SS and the
-   cause: fence wait, pipeline wait (which, tess or not), imported views (count, ms), unmaps ms, region
-   creates, upload MB, VRAM. Add the clock to PRT-PERF and PRT-STALLLOG lines.
-2. PRT-STAGESHRINK v2: run at every VRAM check while over budget. R10 fired only 3 times (tied to the
-   VRAMTRIM start), kept upload copies stayed about 240 MB all race.
-3. PRT-TESSWAIT: tess pipelines are built mid race (driver create 707 and 709 ms at about 19:39:50, near the
-   19:40 hitch). Log whether a draw waited. `RYGT_TESS_SKIP_IN_RACE` (default off) skips those draws while
-   building. Also 9d049f35 and 0bf4547 were built twice in one session: check the driver cache keeps tess
-   pipelines (they use a full driver create, no libraries).
-4. PRT-VIEWCHURN (diag): imported views sit at the 1300 cap; the same ranges are dropped (DIAG-132) and
-   imported again (D1). Log ms per import and churn per second; `RYGT_IMPORT_VIEW_MAX` to raise the cap
-   (default unchanged).
-5. PRT-VMAFREE (diag): where the 1.5 to 1.7 GB free inside VMA blocks sits (memory type, block size,
-   dedicated or not). Fix next round (defrag at load screens, or smaller blocks / dedicated large images).
-6. PRT-PASSTIME (diag, `RYGT_PASS_TIME_LOG`): every 10 s draws per frame, recorder ms per frame, GPU ms of
-   the top 8 passes by target size. Cockpit test: same track 60 s chase view, then 60 s cockpit.
-Owner test after build: note clock times of hitches and view switches; send stdout, stderr, setup.log.
+## Round 11 test results (owner 2026-11-23 21:52-22:15 local, shadGT fe7fd8e, RyGT 44fab8f)
+Logs: work/logs/r11 in the Hark project (findings.md there).
+- Hitches: once per lap at the same spot, 110-130 ms frame "not seen" then ~80 ms of readback fence waits.
+  No compile, tess from driver cache, no imports. Race end/load: 380 view imports 321 ms, frames up to 475 ms.
+- FENCESITE per 10 s: readback DeferFenceSignal (vk_rasterizer.cpp:3469) 9.5-11.5k waits ~7 s;
+  RetireLeasesAfterSplice (direct_memory.cpp:844) 2.8-4.4k waits ~2 s, max 10 ms. Both are waits of the
+  priority-op thread (one queue: a lease wait holds up the fence signals behind it).
+- SUBMITS 37-48/frame: FlushDeferredFences 14-19, DeferFenceSignal 11-16, ChunkFlushCheck 5-9.5.
+- Cockpit vs chase: ~48 vs ~56 fps; GPU 16.9 vs 14.3 ms; recorder 14.5 vs 12.6 ms; 32768x32768 shadow area
+  1.2-1.5 vs 0.3 ms.
+- VRAM race 6.1-6.2 GB of 6342 (R10 7.0-7.4). STAGESHRINK v2 freed 0 MB. VMA free 400-650 MB in ~2000 ranges.
+- Crash 22:15 after photos: 0xc00000fd stack overflow, thread 'PDI', rip libc.prx+0x13136, stack in
+  libSceVideoOut.prx (+0xba3caa x3, +0xd2c3bd, +0xd2dbd9, ...), 0xc0000005 in r12/r13 (an access violation
+  was being handled), right after PRT-PHOTOWB 3840x1080 writebacks and repeated opens of photo/001.gxl.
+
+## Round 12 (owner GO 2026-11-23 22:27 GMT, built shadGT 41530e7)
+1. PRT-FENCEBATCH (`RYGT_FENCE_BATCH`, default 0 off; 1 = 500 us, n = us up to 20000, GT7, pipelined
+   recorder only): a deferred fence that would submit at once only because readbacks are pending / its
+   address already waits / it is not held rides the next submit when the last fence submit was < n us ago.
+   Signals still run after the GPU reaches their tick, in order; the recorder idle hook
+   (FlushDeferredFences) or the next fence after n us submits. Never EOP flushes, DIRECT_HOLD_FLUSH, GT7 spun
+   labels. Risk: a guest spinning on such a label while the recorder stays busy sees it up to n us later.
+   10 s PRT-FENCEBATCH line (batched, fence submits, idle flushes). Files: vk_rasterizer.cpp/.h.
+2. PRT-LEASEASYNC (`RYGT_LEASE_RETIRE_ASYNC`, default off, GT7): RetireLeasesAfterSplice queues leases;
+   later retire calls and the GPU-idle release check the tick without waiting (Scheduler::IsFree) and free
+   the passed ones on the cleanup worker. Leases keep VkBuffer/memory/alias alive, so nothing is reused before
+   its tick. Batches still waiting after 250 ms (or > 2048 queued) go to the priority thread as before;
+   destructor Finish()es first. 10 s PRT-LEASEASYNC line. Files: direct_memory.cpp/.h.
+3. HITCHLOG v2 (`RYGT_HITCH_LOG`): adds GPU ms of the lists resolved in the frame (PASSTIME timestamps, so
+   about a frame late), guest submits, largest gap between guest SubmitGfx calls, time from last submit to
+   flip; "not seen" becomes GPU-bound (GPU >= 70% of frame) / game CPU (submit gap >= 50%) / other.
+   Files: common/prt_hitch.h, liverpool.cpp, vk_presenter.cpp, vk_rasterizer_native.cpp.
+4. PRT-PHOTOCRASH (`RYGT_PHOTO_CRASH_GUARD`, GT7 on, log only): the guest fault handler
+   (page_manager.cpp GuestFaultSignalHandler) counts nesting per thread and the stack left
+   (GetCurrentThreadStackLimits). A nested fault or < 96 KB left logs depth, KB left, both fault addresses
+   and faulting code (8 lines, then 1 per 1000; no line under 12 KB left). Root cause not found in code:
+   two candidates, a fault inside the handler (photo writeback into still protected pages) nesting, or the
+   handler's work (readback/writeback) running out of the PDI guest thread's small stack. No behavior change.
+   Offsets not mapped (no .map here; libSceVideoOut.pdb ships in the package, PRT-STALLSYM can name them).
+5. PRT-SHADOWLOG (`RYGT_SHADOW_LOG`, GT7 on, log only): every 10 s for passes with render area 16384+:
+   passes/draws per frame, GPU ms per frame, slowest pass, largest viewport and screen scissor set, depth or
+   colour image format and size. Uses PASSTIME timestamps. Files: vk_rasterizer_native.cpp/.h.
+Owner test: normal race (defaults) + a few photos; then same race with RYGT_FENCE_BATCH=1 and
+RYGT_LEASE_RETIRE_ASYNC=1; send stdout, stderr, setup.log.
 
 ## Parked (do not start, remind the owner)
 Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
@@ -106,6 +131,7 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 - R10 2026-11-23: DROPFAST, PHOTOWIN, REGIONCAP (off), VRAMREG3, STAGESHRINK, VRAMIDLE backoff, FIX-SGT-115/125.
   Photos and post-photo fps fixed; hitches fewer.
 - R11 2026-11-23: diag round HITCHLOG, TESSWAIT, VIEWCHURN, VMAFREE, PASSTIME, FENCESITE, SUBMITS; STAGESHRINK v2; VRAMTRIM step (off).
+- R12 2026-11-23: FENCEBATCH (off), LEASEASYNC (off), HITCHLOG v2, PHOTOCRASH diag, SHADOWLOG diag. R11 test: once-per-lap hitch, readback fence waits ~7 s/10 s, crash after photos (stack overflow PDI).
 
 ## Fix log (one row per change; test column = owner result)
 | date | repo | commit | what (switches) | default | CI | test |
@@ -185,6 +211,11 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 | 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-FENCESITE: each blocking fence wait counted by site; priority ops record caller; top sites in STALLLOG, HITCHLOG, 10 s line (`RYGT_FENCE_SITE_LOG`) | GT7 on | see R11 run | owner test pending |
 | 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-SUBMITS: 10 s submits per frame + top 10 forcing sites, no behavior change (`RYGT_SUBMIT_LOG`) | GT7 on | see R11 run | owner test pending |
 | 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-VRAMTRIM step: kept texture cap halves per over-budget check (floor 256 MB), +256 MB per check when 512 MB+ under (max 2048) (`RYGT_VRAMTRIM_STEP`) | off | see R11 run | owner test pending |
+| 2026-11-23 | shadGT | 41530e7 | Round 12 PRT-FENCEBATCH: deferred fences forced to submit by readbacks/address/not-held ride a submit made < n us ago; idle hook or next fence submits (`RYGT_FENCE_BATCH`, 1 = 500 us) | 0 (off) | see R12 run | owner test pending |
+| 2026-11-23 | shadGT | 41530e7 | Round 12 PRT-LEASEASYNC: unmapped view leases queued and freed once Scheduler::IsFree(tick), no priority-thread wait; > 250 ms falls back (`RYGT_LEASE_RETIRE_ASYNC`) | off | see R12 run | owner test pending |
+| 2026-11-23 | shadGT | 41530e7 | Round 12 HITCHLOG v2: GPU ms (PASSTIME), guest submits, largest submit gap, last submit before flip; cause GPU-bound / game CPU / other (`RYGT_HITCH_LOG`) | GT7 on | see R12 run | owner test pending |
+| 2026-11-23 | shadGT | 41530e7 | Round 12 PRT-PHOTOCRASH: fault handler nesting depth + stack left, logs nested / low-stack faults (`RYGT_PHOTO_CRASH_GUARD`, log only) | GT7 on | see R12 run | owner test pending |
+| 2026-11-23 | shadGT | 41530e7 | Round 12 PRT-SHADOWLOG: 10 s passes into 16384+ render areas: passes, draws, GPU ms, viewport, scissor, image format/size (`RYGT_SHADOW_LOG`) | GT7 on | see R12 run | owner test pending |
 
 Not ported: rygt7 10d6502 "Verbose logs" toggle (shadGT has no RYGT_LOG_VERBOSE reader; shadgt7 d9c5c52c PRT-LOGS
 was never ported), c47d3b4 HD UI and all DLSS / HD UI / GT Auto / name tag work (dropped), f33505f trophies (= #69).
