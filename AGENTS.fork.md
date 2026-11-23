@@ -66,7 +66,7 @@ Last build: shadGT 6d202135, RyGT 47cfc6e, CI run 45229829369. Later RyGT commit
 | Cockpit view | 5 to 10 fps lower than other views. In races GPU busy 80 to 88%, GpuRecorder/VkCommands/Binder 60 to 82% each (one core = 100%). |
 | Settings | 5.1 audio and display calibration stick. Opening Movie does not (parked). |
 
-## Next round (Round 11), plan waiting for the owner's OK
+## Round 11 (owner OK 2026-11-23 20:26 GMT, built shadGT fe7fd8e; items 7-9 added: FENCESITE, SUBMITS, VRAMTRIM step)
 Logs: work/logs/r10 in the Hark project (stdout has no clock; PRT-PERF every 10 s, start about 19:33:45).
 1. PRT-HITCHLOG (diag, `RYGT_HITCH_LOG`, GT7 on): every frame of 50 ms+ logs local clock HH:MM:SS and the
    cause: fence wait, pipeline wait (which, tess or not), imported views (count, ms), unmaps ms, region
@@ -105,6 +105,7 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 - R9 2026-11-23: GPU checkpoints in release, stall symbols. Photo black again, VRAM fill on photos.
 - R10 2026-11-23: DROPFAST, PHOTOWIN, REGIONCAP (off), VRAMREG3, STAGESHRINK, VRAMIDLE backoff, FIX-SGT-115/125.
   Photos and post-photo fps fixed; hitches fewer.
+- R11 2026-11-23: diag round HITCHLOG, TESSWAIT, VIEWCHURN, VMAFREE, PASSTIME, FENCESITE, SUBMITS; STAGESHRINK v2; VRAMTRIM step (off).
 
 ## Fix log (one row per change; test column = owner result)
 | date | repo | commit | what (switches) | default | CI | test |
@@ -175,6 +176,15 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 | 2026-11-23 | shadGT | 6d202135 | Round 10 PRT-VRAMREG3 (diag, `RYGT_VRAM_REGISTRY_LOG`): native buffer bytes in VRAM by kind, kept upload copies, upload reserve, unnamed rest. PRT-STAGESHRINK: over budget, kept upload copies (PERF-GTS-362, up to 512 MB, ReBAR VRAM) cut to 64 MB (`RYGT_STAGING_SHRINK`) | on / on in GT7 | run 45229829369 | PASS 2026-11-23: race GPU-only buffers 2.1 GB (625 MB not regions), upload 391 MB ReBAR, kept copies 236 MB, reserve 256 MB, 252 MB unnamed; VMA blocks 6.5 GB with 1.5 to 1.7 GB free inside. STAGESHRINK fired only 3 times (only at trim start), kept copies stayed ~240 MB in race |
 | 2026-11-23 | shadGT | 6d202135 | Round 10 PRT-VRAMIDLE backoff: early letting go pauses 600 frames if VRAM did not drop 32 MB in 300 frames or textures < 1/4 of VRAM used (R9: 42 GB churned) (`RYGT_VRAM_IDLE_BACKOFF`) | on in GT7 | run 45229829369 | PASS 2026-11-23: paused all race (textures ~1.1 GB of 7 GB), no more churn; fps no longer single digit after photos |
 | 2026-11-23 | shadGT | a9dccb7d, 557f4d82, 56fe1492 | Round 10 upstream picks from RyGT-Team/shadGT ryty-gpu: FIX-SGT-115 (a9dccb7d, 557f4d82), FIX-SGT-125 (56fe1492). Conflicts left: FIX-SGT-116, FEAT-SGT-118, FIX-SGT-119. Skipped: FIX-SGT-124, PERF-SGT-126 (AMD), FIX-GTS-528/529 (GT Sport). shadGT#75 merged upstream (7bc5484e) | upstream | run 45229829369 | PASS 2026-11-23: no regressions seen |
+| 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-HITCHLOG: frames 50 ms+ log [HH:MM:SS], cause, fence sites, pipeline/tess waits, imports, unmaps, region creates, upload MB, VRAM; clock on PRT-PERF and PRT-STALLLOG (`RYGT_HITCH_LOG`, ms threshold) | GT7 50 | see R11 run | owner test pending |
+| 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-STAGESHRINK v2: free kept upload copies outside the 256 MB reserve at each over-budget check, keep none there while over; 10 s split log. v1 freed nothing because copies sat inside the reserve (`RYGT_STAGING_SHRINK_V2`) | GT7 on | see R11 run | owner test pending |
+| 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-TESSWAIT: log tess draws that waited, tess driver creates ms + cache hit + build count (R10: 0c4fac70 built 5x, 565-707 ms) (`RYGT_TESS_WAIT_LOG`); `RYGT_TESS_SKIP_IN_RACE` skips tess one-off draws in race while building | log GT7 on, skip off | see R11 run | owner test pending |
+| 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-VIEWCHURN: 10 s imports/s, ms per import, drops, re-imports within 10 s (`RYGT_VIEW_CHURN_LOG`). RYGT_IMPORT_VIEW_MAX not added: no cap in code, views are 2 MB GT7 mappings, count is churn | GT7 on | see R11 run | owner test pending |
+| 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-VMAFREE: per memory type blocks, alloc/free MB, free ranges, largest, reserve pool (`RYGT_VMA_FREE_LOG`). Dedicated allocs not split (too heavy) | GT7 on | see R11 run | owner test pending |
+| 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-PASSTIME: 10 s draws/dispatches per frame, recorder ms, GPU ms, top 8 passes by area (DIAG-GT7-001 timestamps in release) (`RYGT_PASS_TIME_LOG`) | GT7 on | see R11 run | owner test pending |
+| 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-FENCESITE: each blocking fence wait counted by site; priority ops record caller; top sites in STALLLOG, HITCHLOG, 10 s line (`RYGT_FENCE_SITE_LOG`) | GT7 on | see R11 run | owner test pending |
+| 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-SUBMITS: 10 s submits per frame + top 10 forcing sites, no behavior change (`RYGT_SUBMIT_LOG`) | GT7 on | see R11 run | owner test pending |
+| 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-VRAMTRIM step: kept texture cap halves per over-budget check (floor 256 MB), +256 MB per check when 512 MB+ under (max 2048) (`RYGT_VRAMTRIM_STEP`) | off | see R11 run | owner test pending |
 
 Not ported: rygt7 10d6502 "Verbose logs" toggle (shadGT has no RYGT_LOG_VERBOSE reader; shadgt7 d9c5c52c PRT-LOGS
 was never ported), c47d3b4 HD UI and all DLSS / HD UI / GT Auto / name tag work (dropped), f33505f trophies (= #69).
