@@ -144,6 +144,11 @@ Owner test: run 1 defaults, cockpit race + photos/scapes; run 2 only RYGT_FENCE_
 optional run 3 SHADGT_EXPERIMENTAL_SCENE_VIEWPORT=1 SHADGT_SCENE_WIDTH=1706 SHADGT_SCENE_HEIGHT=960 (or 1280x720)
 for a picture compare. Send stdout.log, stderr.log, setup.log.
 
+## Next round to-do (owner 2026-11-24 10:42 GMT)
+- Drop the #118 FEAT-GT7-194 scene render scale port from shadGT pr-tests (owner plays PS4 Pro mode; the
+  scene viewport only goes below 1080p with UI/output at 1080p, too big a resolution drop). Run 3 skipped.
+- Owner sends Round 13 logs from run 1 (defaults) and run 2 (RYGT_FENCE_BATCH=1 only).
+
 ## Parked (do not start, remind the owner)
 Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
 SaveData exports; garage nvoglv64.dll crash; camera hook signature mismatch at RVA 0x86b030 (every start);
