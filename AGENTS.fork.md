@@ -195,6 +195,17 @@ for a picture compare. Send stdout.log, stderr.log, setup.log.
 - Test: race with `RYGT_AUDIO_MIX_REDZONE_SKIP=1` + `RYGT_AUDIO_DIAG=1`, Scapes photo first is fine. Check
   stderr line, audio thread % (PRT-AUDIOLOAD), ACTIVE_UNDERRUN count in audio_diag.log vs run 2 (5406).
 
+## Round 15 test results (owner 2026-11-24 15:19-15:33 GMT, logs work/logs/r15/run1)
+- Bat: RYGT_AUDIO_DIAG=1 + RYGT_AUDIO_MIX_REDZONE_SKIP=1. Scapes photo, 3-lap race, replay photo, 1-lap race.
+- Skip worked: stderr "skipped for the function at GT7.exe+0x2b680d0"; AUDIOLOOP code bytes show the loop
+  native (vbroadcastss, no e9 jumps). No crash, no perf loss, no felt hitches (15 race frames 50-100 ms).
+- No audio gain: thread still 80-98% of a core, hot spot still GT7.exe+0x2b68360 (48%), crackle from
+  15:23:00, 4032 underruns (default latency). Red-zone trampolines were NOT the cost. Keep the switch off.
+- Next idea (proposed, not built): denormal floats. Orbis threads run MXCSR 0x9fc0 (FTZ+DAZ,
+  src/core/thread.cpp); if the audio thread lost FTZ/DAZ, decaying voices go denormal and the mix loop
+  slows 10-100x, growing over a race. Plan: log the audio thread MxCsr from PRT-AUDIOLOAD's
+  GetThreadContext, and a default-off switch that sets FTZ+DAZ on it.
+
 ## Parked (do not start, remind the owner)
 Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
 SaveData exports; garage nvoglv64.dll crash; camera hook signature mismatch at RVA 0x86b030 (every start);
@@ -321,4 +332,4 @@ Not ported: rygt7 10d6502 "Verbose logs" toggle, c47d3b4 HD UI and all DLSS / HD
 | 2026-11-24 | shadGT | 31712ce3 | Round 14: drop #118 FEAT-GT7-194 scene scale port (revert 529ceebe) | n/a | R14 run | owner test pending |
 | 2026-11-24 | shadGT | acdc0c0b | Round 14 PRT-FENCEBATCH default on in GT7, 500 us (`RYGT_FENCE_BATCH`, 0 = off) | GT7 on | R14 run | 14 hitches <100 ms in 3 laps, VRAM under budget |
 | 2026-11-24 | shadGT | acdc0c0b | Round 14 PRT-AUDIOLOOP: hot audio spot register low/middle/high + 192 code bytes once (`RYGT_AUDIO_LOOP_LOG`, log only) | GT7 on | R14 run | works: fixed 128-sample mix loop |
-| 2026-11-24 | shadGT | 22667bc3 | Round 15 PRT-REDZONESKIP: no red-zone trampolines in GT7 audio mix loop (`RYGT_AUDIO_MIX_REDZONE_SKIP`) | off | R15 run | |
+| 2026-11-24 | shadGT | 22667bc3 | Round 15 PRT-REDZONESKIP: no red-zone trampolines in GT7 audio mix loop (`RYGT_AUDIO_MIX_REDZONE_SKIP`) | off | R15 run | works, no audio gain; keep off |
