@@ -206,6 +206,15 @@ for a picture compare. Send stdout.log, stderr.log, setup.log.
   slows 10-100x, growing over a race. Plan: log the audio thread MxCsr from PRT-AUDIOLOAD's
   GetThreadContext, and a default-off switch that sets FTZ+DAZ on it.
 
+## Round 16 (owner GO 2026-11-24 15:38 GMT, built shadGT deb8f310)
+- PRT-AUDIOMXCSR (`RYGT_AUDIO_MXCSR_LOG`, GT7 on with AUDIOLOAD, log only): once a second reads the audio
+  thread MXCSR (GetThreadContext); the PRT-AUDIOLOAD line (now every 10 s, hot or not) ends with
+  "; MXCSR 0x.. xN (FTZ on/off, DAZ on/off)".
+- PRT-AUDIOFTZ (`RYGT_AUDIO_FTZ`, default OFF, needs AUDIOLOAD on): if FTZ+DAZ (0x8040) are missing, sets
+  them back with SetThreadContext; the line adds "PRT-AUDIOFTZ set FTZ+DAZ n times".
+- Test: run 1 defaults + RYGT_AUDIO_DIAG=1 (read MXCSR). If FTZ/DAZ show off, run 2 with RYGT_AUDIO_FTZ=1:
+  audio thread %, underruns vs R15 (4032), crackle. If MXCSR is already 0x9fc0, denormal theory is dead.
+
 ## Parked (do not start, remind the owner)
 Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
 SaveData exports; garage nvoglv64.dll crash; camera hook signature mismatch at RVA 0x86b030 (every start);
@@ -230,6 +239,7 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 - R14 2026-11-24: FENCEBATCH on, AUDIOLOOP diag, #118 dropped. R13 test: run 1 (no fence batch) 19 race hitches 5.8 s, VRAM 7.4-7.6 GB, name tags jumping; bat 13 hitches 2.0 s; audio thread climbs 20% -> 95% over a race.
 - R13 2026-11-24: PHOTOFIX (STAGESHRINK v2 off), LEASEASYNC on, PRT log lines to Warning, AUDIOLOAD diag; ports #119, #115, #118 (off); #105 already in. R12 test: bat 16 vs 22 hitches, black photos from STAGESHRINK v2, audio thread 95-99% core.
 - R15 2026-11-24: REDZONESKIP (off) for the audio mix loop. R14 test: no felt hitches (photo then race too), race VRAM 7.0-7.2 GB after a photo with no hitches (trim not needed); crackle = audio_diag underruns while the mixer thread is at 80-99%.
+- R16 2026-11-24: AUDIOMXCSR log, AUDIOFTZ (off). R15 test: red-zone skip works but no audio gain (thread still 80-98%).
 
 ## Fix log (one row per change; test column = owner result)
 | date | repo | commit | what (switches) | default | CI | test |
@@ -333,3 +343,5 @@ Not ported: rygt7 10d6502 "Verbose logs" toggle, c47d3b4 HD UI and all DLSS / HD
 | 2026-11-24 | shadGT | acdc0c0b | Round 14 PRT-FENCEBATCH default on in GT7, 500 us (`RYGT_FENCE_BATCH`, 0 = off) | GT7 on | R14 run | 14 hitches <100 ms in 3 laps, VRAM under budget |
 | 2026-11-24 | shadGT | acdc0c0b | Round 14 PRT-AUDIOLOOP: hot audio spot register low/middle/high + 192 code bytes once (`RYGT_AUDIO_LOOP_LOG`, log only) | GT7 on | R14 run | works: fixed 128-sample mix loop |
 | 2026-11-24 | shadGT | 22667bc3 | Round 15 PRT-REDZONESKIP: no red-zone trampolines in GT7 audio mix loop (`RYGT_AUDIO_MIX_REDZONE_SKIP`) | off | R15 run | works, no audio gain; keep off |
+| 2026-11-24 | shadGT | deb8f310 | Round 16 PRT-AUDIOMXCSR: audio thread MXCSR in PRT-AUDIOLOAD (`RYGT_AUDIO_MXCSR_LOG`, log only) | GT7 on | R16 run | |
+| 2026-11-24 | shadGT | deb8f310 | Round 16 PRT-AUDIOFTZ: set FTZ+DAZ on the audio thread (`RYGT_AUDIO_FTZ`) | off | R16 run | |
