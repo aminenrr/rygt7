@@ -178,6 +178,11 @@ for a picture compare. Send stdout.log, stderr.log, setup.log.
   sample), counter ebp from [rsp-0x20] always 128 (rbx 0..2032 step 16). 7 jumps out per iteration to
   FIX-074 red-zone trampolines. Load growth = more mix calls per second (more voices/blocks), not longer loops.
 - No audio_diag.log in the zip.
+- Run 2 (RYGT_AUDIO_DIAG=1, RYGT_AUDIO_TARGET_LATENCY_MS=100, Scapes photo first, 3-lap + 1-lap race, logs
+  work/logs/r14/run2): owner felt no hitches at all; 21 race frames over 50 ms (50-150 ms). Race VRAM
+  7.0-7.2 GB after the photo (over budget) but no hitches, trim still not needed. audio_diag: 5406 active
+  underruns on the main port (43 s of gaps), all while the audio thread is at 80-99% (13:22-13:28, 13:31);
+  producer can't keep up, 100 ms latency doesn't help.
 
 ## Parked (do not start, remind the owner)
 Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
