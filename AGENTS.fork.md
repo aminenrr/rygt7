@@ -144,6 +144,16 @@ Owner test: run 1 defaults, cockpit race + photos/scapes; run 2 only RYGT_FENCE_
 optional run 3 SHADGT_EXPERIMENTAL_SCENE_VIEWPORT=1 SHADGT_SCENE_WIDTH=1706 SHADGT_SCENE_HEIGHT=960 (or 1280x720)
 for a picture compare. Send stdout.log, stderr.log, setup.log.
 
+## Round 13 test results (owner 2026-11-24, logs work/logs/r13; one lap cockpit each)
+- Run 1 defaults (LEASEASYNC on, FENCEBATCH off): much worse. Race hitches 19, total 5.8 s, 9 over 300 ms
+  (readback waits DeferFenceSignal 300-850 ms). Race VRAM 7.4-7.6 GB (peak 8.3) of 6342; entered the race with
+  1.3 GB more than run 2 (VMA 6.8 GB, 9400 allocations, 1.2-1.4 GB free inside). Name tags over cars jumped.
+- Run 2 RYGT_FENCE_BATCH=1: race hitches 13, total 2.0 s, 1 over 300 ms; VRAM 6.1-6.3 GB; tags fine.
+  Owner: fewer hitches than run 1, not as good as R12 run 2. Fps ~47-49 both (PASSTIME frames).
+- Audio crackle in both. SceSndzAudioOutMain climbs 21% -> 95% of a core over ~2.5 min of race (both runs);
+  55% of samples in the 16-byte loop GT7.exe+0x2b68360..36c, stack GT7.exe+0x2b5a2a5. Not caused by FENCEBATCH.
+- Photos: PHOTOFIX line present (not tested this time). Plan: work/round14-plan.md in the Hark project.
+
 ## Next round to-do (owner 2026-11-24 10:42 GMT)
 - Drop the #118 FEAT-GT7-194 scene render scale port from shadGT pr-tests (owner plays PS4 Pro mode; the
   scene viewport only goes below 1080p with UI/output at 1080p, too big a resolution drop). Run 3 skipped.
