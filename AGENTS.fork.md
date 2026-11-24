@@ -169,6 +169,16 @@ for a picture compare. Send stdout.log, stderr.log, setup.log.
   at race load. Needs owner OK.
 - PR RyGT-Team/RyGT#65 is out of round scope (owner).
 
+## Round 14 test results (owner 2026-11-24, one 3-lap cockpit race, defaults, logs work/logs/r14)
+- Owner: no hitch felt, much more stable than R13. Logs: 14 race frames over 50 ms (51-96 ms, ~1.0 s total),
+  none over 100 ms. VRAM 5.8-6.1 GB of 6342 MB: kept textures/pictures trim not needed.
+- Audio: crackle from 13:01:02 to race end (clears 1-2 s, comes back). Audio thread 22% at 12:59:28 -> 90% at
+  13:00:58 -> 93-99% (unsampled windows) for the rest: crackle starts when the thread saturates a core.
+- AUDIOLOOP: hot spot is NOT a list walk. GT7.exe+0x2b68340 is a float mix loop (4x4 multiply-add per
+  sample), counter ebp from [rsp-0x20] always 128 (rbx 0..2032 step 16). 7 jumps out per iteration to
+  FIX-074 red-zone trampolines. Load growth = more mix calls per second (more voices/blocks), not longer loops.
+- No audio_diag.log in the zip.
+
 ## Parked (do not start, remind the owner)
 Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
 SaveData exports; garage nvoglv64.dll crash; camera hook signature mismatch at RVA 0x86b030 (every start);
@@ -292,5 +302,5 @@ was never ported), c47d3b4 HD UI and all DLSS / HD UI / GT Auto / name tag work 
 Not ported: rygt7 10d6502 "Verbose logs" toggle, c47d3b4 HD UI and all DLSS / HD UI / GT Auto / name tag work
 (dropped), f33505f trophies (= #69).
 | 2026-11-24 | shadGT | 31712ce3 | Round 14: drop #118 FEAT-GT7-194 scene scale port (revert 529ceebe) | n/a | R14 run | owner test pending |
-| 2026-11-24 | shadGT | acdc0c0b | Round 14 PRT-FENCEBATCH default on in GT7, 500 us (`RYGT_FENCE_BATCH`, 0 = off) | GT7 on | R14 run | owner test pending |
-| 2026-11-24 | shadGT | acdc0c0b | Round 14 PRT-AUDIOLOOP: hot audio spot register low/middle/high + 192 code bytes once (`RYGT_AUDIO_LOOP_LOG`, log only) | GT7 on | R14 run | owner test pending |
+| 2026-11-24 | shadGT | acdc0c0b | Round 14 PRT-FENCEBATCH default on in GT7, 500 us (`RYGT_FENCE_BATCH`, 0 = off) | GT7 on | R14 run | 14 hitches <100 ms in 3 laps, VRAM under budget |
+| 2026-11-24 | shadGT | acdc0c0b | Round 14 PRT-AUDIOLOOP: hot audio spot register low/middle/high + 192 code bytes once (`RYGT_AUDIO_LOOP_LOG`, log only) | GT7 on | R14 run | works: fixed 128-sample mix loop |
