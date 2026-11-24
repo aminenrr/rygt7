@@ -111,12 +111,45 @@ Logs: work/logs/r11 in the Hark project (findings.md there).
 Owner test: normal race (defaults) + a few photos; then same race with RYGT_FENCE_BATCH=1 and
 RYGT_LEASE_RETIRE_ASYNC=1; send stdout, stderr, setup.log.
 
+## Round 12 test results (owner 2026-11-23, shadGT 41530e7, RyGT 2590088)
+- Run 2 bat (RYGT_FENCE_BATCH=1 + RYGT_LEASE_RETIRE_ASYNC=1) vs run 1 defaults: race hitches 16 vs 22,
+  >= 150 ms 3 vs 6, hitch total 2.0 vs 3.2 s; lower race VRAM. Same fps ~49 cockpit, GPU 16 ms.
+- Run 1 big hitches 23:46: single readback waits 260-362 ms at VRAM 6.2-6.4 GB.
+- Audio thread SceSndzAudioOutMain 95-99% of a core in races (PRT-PERF); crackle, worse with the bat run.
+  Switching camera fixes it for a while.
+- Photos black: caused by STAGESHRINK v2, confirmed by a scape test with RYGT_STAGING_SHRINK_V2=0. No crash.
+- PRT-FENCEBATCH / PRT-LEASEASYNC / PRT-SHADOWLOG lines missing: they were LOG_INFO (Release filters Info).
+
+## Round 13 (owner GO 2026-11-24 00:24 GMT, built shadGT 529ceebe)
+1. PRT-PHOTOFIX: `RYGT_STAGING_SHRINK_V2` default off in GT7 (1 = on). Round 10 STAGESHRINK unchanged.
+   One PRT-PHOTOFIX line at start. File: vk_rasterizer_native.cpp.
+2. PRT-LEASEASYNC: `RYGT_LEASE_RETIRE_ASYNC` default on in GT7 (0 = off). File: direct_memory.cpp.
+3. PRT-FENCEBATCH: `RYGT_FENCE_BATCH` stays 0; its lines now LOG_WARNING. File: vk_rasterizer.cpp.
+4. PRT-LEASEASYNC and PRT-SHADOWLOG lines now LOG_WARNING, still every 10 s.
+5. PRT-AUDIOLOAD (`RYGT_AUDIO_LOAD_LOG`, GT7 on, log only): when PRT-PERF finds SceSndzAudioOutMain above 80% of
+   a core in a 10 s window, the PRT-PERF thread samples it every 10 ms in the next window (TakeSample of
+   PRT-STALLSAMPLE: suspend, rip + stack code addresses, resume). 10 s PRT-AUDIOLOAD line: CPU % (user/kernel),
+   samples, top 6 spots (64-byte code ranges, DescribeCode + PRT-STALLSYM names) with % and most seen stack
+   address, fence waits that thread made (new PRT-FENCESITE Watched slot). No wake count / sleep time (Windows
+   has no cheap per-thread counter for it). Files: perf_monitor.cpp/.h, prt_stall_cause.h, prt_stall_sample.h,
+   compile_notice_layer.cpp, vk_scheduler.cpp.
+6. Upstream ports (ryty-gpu): #105 PERF-SGT-122 ThinLTO + PGO was already in pr-tests (cdf63a2f/64f8095d with
+   pgo/renderer.profdata; CMake option RYGT_RELEASE_LTO_PGO ON, -Wno-profile-instr-* -Wno-backend-plugin already
+   there; CI renderer build is Release clang-cl + lld-link, so it applies). #119 FIX-SGT-136 image float atomic
+   min/max exact (`SHADGT_FLOAT_ATOMIC_EXACT`). #115 FIX-SGT-135 recipes zeroed (new pr-tests switch
+   `SHADGT_RECIPE_ZERO_SLACK`, on). #118 FEAT-GT7-194 GT7 scene render scale, off unless
+   `SHADGT_EXPERIMENTAL_SCENE_VIEWPORT=1` + `SHADGT_SCENE_WIDTH`/`SHADGT_SCENE_HEIGHT` (16:9, below 1920x1080);
+   pr-tests keeps GT7's WIDE-001 scene size. Not taken: #99 (HDR, dropped), #108 (parked).
+Owner test: run 1 defaults, cockpit race + photos/scapes; run 2 only RYGT_FENCE_BATCH=1 (does it worsen audio);
+optional run 3 SHADGT_EXPERIMENTAL_SCENE_VIEWPORT=1 SHADGT_SCENE_WIDTH=1706 SHADGT_SCENE_HEIGHT=960 (or 1280x720)
+for a picture compare. Send stdout.log, stderr.log, setup.log.
+
 ## Parked (do not start, remind the owner)
 Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
 SaveData exports; garage nvoglv64.dll crash; camera hook signature mismatch at RVA 0x86b030 (every start);
 pread error 5 / errno 9 on savedata; read-write alias throws (quiet, watch).
 Deferred: .meta compression of the shader store, VMA defrag, PRELOADEVICT.
-Upstream picks not taken: FIX-SGT-116, FEAT-SGT-118, FIX-SGT-119, review fix 88d1d70c (conflicts);
+Upstream picks not taken: FIX-SGT-116, FEAT-SGT-118 (#108, parked), FIX-SGT-119, review fix 88d1d70c (conflicts); #99 HDR (dropped);
 FIX-SGT-124, PERF-SGT-126 (AMD only); FIX-GTS-528/529 (GT Sport).
 Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 
@@ -132,6 +165,7 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
   Photos and post-photo fps fixed; hitches fewer.
 - R11 2026-11-23: diag round HITCHLOG, TESSWAIT, VIEWCHURN, VMAFREE, PASSTIME, FENCESITE, SUBMITS; STAGESHRINK v2; VRAMTRIM step (off).
 - R12 2026-11-23: FENCEBATCH (off), LEASEASYNC (off), HITCHLOG v2, PHOTOCRASH diag, SHADOWLOG diag. R11 test: once-per-lap hitch, readback fence waits ~7 s/10 s, crash after photos (stack overflow PDI).
+- R13 2026-11-24: PHOTOFIX (STAGESHRINK v2 off), LEASEASYNC on, PRT log lines to Warning, AUDIOLOAD diag; ports #119, #115, #118 (off); #105 already in. R12 test: bat 16 vs 22 hitches, black photos from STAGESHRINK v2, audio thread 95-99% core.
 
 ## Fix log (one row per change; test column = owner result)
 | date | repo | commit | what (switches) | default | CI | test |
@@ -203,7 +237,7 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 | 2026-11-23 | shadGT | 6d202135 | Round 10 PRT-VRAMIDLE backoff: early letting go pauses 600 frames if VRAM did not drop 32 MB in 300 frames or textures < 1/4 of VRAM used (R9: 42 GB churned) (`RYGT_VRAM_IDLE_BACKOFF`) | on in GT7 | run 45229829369 | PASS 2026-11-23: paused all race (textures ~1.1 GB of 7 GB), no more churn; fps no longer single digit after photos |
 | 2026-11-23 | shadGT | a9dccb7d, 557f4d82, 56fe1492 | Round 10 upstream picks from RyGT-Team/shadGT ryty-gpu: FIX-SGT-115 (a9dccb7d, 557f4d82), FIX-SGT-125 (56fe1492). Conflicts left: FIX-SGT-116, FEAT-SGT-118, FIX-SGT-119. Skipped: FIX-SGT-124, PERF-SGT-126 (AMD), FIX-GTS-528/529 (GT Sport). shadGT#75 merged upstream (7bc5484e) | upstream | run 45229829369 | PASS 2026-11-23: no regressions seen |
 | 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-HITCHLOG: frames 50 ms+ log [HH:MM:SS], cause, fence sites, pipeline/tess waits, imports, unmaps, region creates, upload MB, VRAM; clock on PRT-PERF and PRT-STALLLOG (`RYGT_HITCH_LOG`, ms threshold) | GT7 50 | see R11 run | owner test pending |
-| 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-STAGESHRINK v2: free kept upload copies outside the 256 MB reserve at each over-budget check, keep none there while over; 10 s split log. v1 freed nothing because copies sat inside the reserve (`RYGT_STAGING_SHRINK_V2`) | GT7 on | see R11 run | owner test pending |
+| 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-STAGESHRINK v2: free kept upload copies outside the 256 MB reserve at each over-budget check, keep none there while over; 10 s split log. v1 freed nothing because copies sat inside the reserve (`RYGT_STAGING_SHRINK_V2`) | GT7 on | see R11 run | R11: freed 0 MB; R12: black photos, off since R13 (PHOTOFIX) |
 | 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-TESSWAIT: log tess draws that waited, tess driver creates ms + cache hit + build count (R10: 0c4fac70 built 5x, 565-707 ms) (`RYGT_TESS_WAIT_LOG`); `RYGT_TESS_SKIP_IN_RACE` skips tess one-off draws in race while building | log GT7 on, skip off | see R11 run | owner test pending |
 | 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-VIEWCHURN: 10 s imports/s, ms per import, drops, re-imports within 10 s (`RYGT_VIEW_CHURN_LOG`). RYGT_IMPORT_VIEW_MAX not added: no cap in code, views are 2 MB GT7 mappings, count is churn | GT7 on | see R11 run | owner test pending |
 | 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-VMAFREE: per memory type blocks, alloc/free MB, free ranges, largest, reserve pool (`RYGT_VMA_FREE_LOG`). Dedicated allocs not split (too heavy) | GT7 on | see R11 run | owner test pending |
@@ -211,11 +245,20 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 | 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-FENCESITE: each blocking fence wait counted by site; priority ops record caller; top sites in STALLLOG, HITCHLOG, 10 s line (`RYGT_FENCE_SITE_LOG`) | GT7 on | see R11 run | owner test pending |
 | 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-SUBMITS: 10 s submits per frame + top 10 forcing sites, no behavior change (`RYGT_SUBMIT_LOG`) | GT7 on | see R11 run | owner test pending |
 | 2026-11-23 | shadGT | fe7fd8e | Round 11 PRT-VRAMTRIM step: kept texture cap halves per over-budget check (floor 256 MB), +256 MB per check when 512 MB+ under (max 2048) (`RYGT_VRAMTRIM_STEP`) | off | see R11 run | owner test pending |
-| 2026-11-23 | shadGT | 41530e7 | Round 12 PRT-FENCEBATCH: deferred fences forced to submit by readbacks/address/not-held ride a submit made < n us ago; idle hook or next fence submits (`RYGT_FENCE_BATCH`, 1 = 500 us) | 0 (off) | see R12 run | owner test pending |
-| 2026-11-23 | shadGT | 41530e7 | Round 12 PRT-LEASEASYNC: unmapped view leases queued and freed once Scheduler::IsFree(tick), no priority-thread wait; > 250 ms falls back (`RYGT_LEASE_RETIRE_ASYNC`) | off | see R12 run | owner test pending |
-| 2026-11-23 | shadGT | 41530e7 | Round 12 HITCHLOG v2: GPU ms (PASSTIME), guest submits, largest submit gap, last submit before flip; cause GPU-bound / game CPU / other (`RYGT_HITCH_LOG`) | GT7 on | see R12 run | owner test pending |
-| 2026-11-23 | shadGT | 41530e7 | Round 12 PRT-PHOTOCRASH: fault handler nesting depth + stack left, logs nested / low-stack faults (`RYGT_PHOTO_CRASH_GUARD`, log only) | GT7 on | see R12 run | owner test pending |
-| 2026-11-23 | shadGT | 41530e7 | Round 12 PRT-SHADOWLOG: 10 s passes into 16384+ render areas: passes, draws, GPU ms, viewport, scissor, image format/size (`RYGT_SHADOW_LOG`) | GT7 on | see R12 run | owner test pending |
+| 2026-11-23 | shadGT | 41530e7 | Round 12 PRT-FENCEBATCH: deferred fences forced to submit by readbacks/address/not-held ride a submit made < n us ago; idle hook or next fence submits (`RYGT_FENCE_BATCH`, 1 = 500 us) | 0 (off) | see R12 run | R12 bat with LEASEASYNC: 16 vs 22 hitches; lines missing (Info); audio crackle worse |
+| 2026-11-23 | shadGT | 41530e7 | Round 12 PRT-LEASEASYNC: unmapped view leases queued and freed once Scheduler::IsFree(tick), no priority-thread wait; > 250 ms falls back (`RYGT_LEASE_RETIRE_ASYNC`) | off | see R12 run | R12 bat with FENCEBATCH: 16 vs 22 hitches, lower VRAM; on since R13 |
+| 2026-11-23 | shadGT | 41530e7 | Round 12 HITCHLOG v2: GPU ms (PASSTIME), guest submits, largest submit gap, last submit before flip; cause GPU-bound / game CPU / other (`RYGT_HITCH_LOG`) | GT7 on | see R12 run | R12: big hitches 23:46 = single readback waits 260-362 ms |
+| 2026-11-23 | shadGT | 41530e7 | Round 12 PRT-PHOTOCRASH: fault handler nesting depth + stack left, logs nested / low-stack faults (`RYGT_PHOTO_CRASH_GUARD`, log only) | GT7 on | see R12 run | R12: no crash |
+| 2026-11-23 | shadGT | 41530e7 | Round 12 PRT-SHADOWLOG: 10 s passes into 16384+ render areas: passes, draws, GPU ms, viewport, scissor, image format/size (`RYGT_SHADOW_LOG`) | GT7 on | see R12 run | R12: line missing (Info), Warning since R13 |
+| 2026-11-24 | shadGT | d77f9d79 | Round 13 PRT-PHOTOFIX: STAGESHRINK v2 default off in GT7, black photos (`RYGT_STAGING_SHRINK_V2`, 1 = on) | off | see R13 run | owner test pending |
+| 2026-11-24 | shadGT | c94003bf | Round 13 PRT-LEASEASYNC default on in GT7 (`RYGT_LEASE_RETIRE_ASYNC`, 0 = off) | GT7 on | see R13 run | owner test pending |
+| 2026-11-24 | shadGT | 9f8fbf28 | Round 13 PRT-FENCEBATCH lines LOG_INFO -> LOG_WARNING (`RYGT_FENCE_BATCH`) | 0 (off) | see R13 run | owner test pending |
+| 2026-11-24 | shadGT | e3e79cdb | Round 13 PRT-LEASEASYNC + PRT-SHADOWLOG lines LOG_INFO -> LOG_WARNING (`RYGT_LEASE_RETIRE_ASYNC`, `RYGT_SHADOW_LOG`) | GT7 on | see R13 run | owner test pending |
+| 2026-11-24 | shadGT | 1c86b46c | Round 13 PRT-AUDIOLOAD: SceSndzAudioOutMain > 80% core sampled every 10 ms, top 6 spots, CPU user/kernel, its fence waits (`RYGT_AUDIO_LOAD_LOG`, log only) | GT7 on | see R13 run | owner test pending |
+| 2026-11-24 | shadGT | b9dee7fd | Round 13 port of RyGT-Team/shadGT#119 FIX-SGT-136: exact float atomic min/max on images (`SHADGT_FLOAT_ATOMIC_EXACT`) | on | see R13 run | owner test pending |
+| 2026-11-24 | shadGT | 9233a265 | Round 13 port of RyGT-Team/shadGT#115 FIX-SGT-135: pipeline recipes written with unread bytes zeroed (`SHADGT_RECIPE_ZERO_SLACK`, pr-tests switch) | on | see R13 run | owner test pending |
+| 2026-11-24 | shadGT | 529ceebe | Round 13 port of RyGT-Team/shadGT#118 FEAT-GT7-194: GT7 scene render scale (`SHADGT_EXPERIMENTAL_SCENE_VIEWPORT`=1, `SHADGT_SCENE_WIDTH`, `SHADGT_SCENE_HEIGHT`) | off | see R13 run | owner test pending |
+| 2026-11-24 | shadGT | cdf63a2f | Round 13 port of RyGT-Team/shadGT#105 PERF-SGT-122: ThinLTO + PGO Release renderer (CMake `RYGT_RELEASE_LTO_PGO`), already in pr-tests before R13, no new commit | on | see R13 run | owner test pending |
 
 Not ported: rygt7 10d6502 "Verbose logs" toggle (shadGT has no RYGT_LOG_VERBOSE reader; shadgt7 d9c5c52c PRT-LOGS
 was never ported), c47d3b4 HD UI and all DLSS / HD UI / GT Auto / name tag work (dropped), f33505f trophies (= #69).
