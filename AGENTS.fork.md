@@ -474,6 +474,25 @@ Test ask (owner, after CI):
   naming the track segments (or guest folder lines if no course path matched), VRAMHEAD "kept after reload", PRT-RBWAIT
   top 5 (with PRT-RBBATCH counts).
 
+## Round 20 test results (owner 2026-11-25 16:53-17:17 GMT, defaults, no bat, two runs on different tracks, logs work/logs/r20/run1 and run2 in the Hark project)
+- DRVSEAL drain: PASS. Run 2: seg5 drained in 39 ms (12 creates in flight), saved 609 MB (read 467 ms, written 2660 ms), sealed, seg6 open. No hang in either run.
+- DRVPLAIN: PASS. No plain .vkpipelinecache deleted line on either start.
+- DRVSTALE bug: run 1 exit dropped seg2 (804 MB, 8984 pipelines, 1112 used). Index 27673 to 18689. Run 2 splash rebuilt ALL 8984 launcher records "not in the index" (12.1 s, 7% driver hits), not only the 1112 used. Drop and launcher records fight each other.
+- DRVTRACK: no effect. 40 guest folders logged, all save/user data (/download0/APP_DATA, /_sd, /temp0, /sys/common/font). No course path reaches the file layer (GT7 reads tracks through gt.idx volumes). 0 track segments.
+- DRVHIT in races still 25 to 35% per sealed segment (same as R19).
+- RBWAIT and RBBATCH: NO lines at all (not even "PRT-RBBATCH: on"). Both only act on fences that bring readback data; the waits seen are fences deferred with no data of their own (address order FIX-049 or background readbacks), so the code never ran. Hitches unchanged: run 1 race start 16:56:12-13 (288 to 344 ms, 22 to 70 readback waits a frame); run 2 17:06:50-53 up to 528 ms, 17:07:05 763 ms, 17:07:44 1281 ms (44 waits, 1275 ms).
+- VRAMHEAD backoff: works in run 1 race (56 kept after reload, VRAM 5.6 to 5.7 GB, no thrash). Run 2 race 6.6 to 6.8 GB, over budget every check but reloads small (11 to 17 MB in 10 s).
+- Run 2 17:07 to 17:10:30: 25 to 30 fps for 3.5 min, not flagged as a race, PipelineBuild threads 60 to 96%, GPU 87 to 94%, VRAM over budget. Unknown screen (ask owner).
+- RAM: run 2 race private 21.2 GB (R19 race 18.1 to 19.1 GB). Exit 19.3 GB.
+- Audio: AUDIOFTZ set 0 times (thread already has FTZ+DAZ).
+
+## Round 21 plan (proposal, waiting owner OK)
+1. PRT-RBWAIT v2 (log): count every deferred fence by why it was deferred (has data / address order / background readback / not held) and site, in races and loading; top 5 every 10 s.
+2. PRT-RBBATCH v2: also batch fences deferred only for order (no data of their own), same guard (data before label, waits and WAIT_REG_MEM and recorder idle submit first, spun labels never held). On in GT7 per owner OK 2026-11-25 14:27.
+3. PRT-DRVSTALE v2: when a segment is dropped, keep its used pipelines (moved to the open segment) and mark its unused launcher records stale, so the splash and the launcher pass skip them. No 12 s rebuild after a drop.
+4. DRVTRACK: switch default off (no course paths). Option for later: map gt.idx volume reads to course ids.
+5. Unknown 25 fps stretch in run 2: owner to say what screen that was; then decide.
+
 ## Parked (do not start, remind the owner)
 Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
 SaveData exports; garage nvoglv64.dll crash; camera hook signature mismatch at RVA 0x86b030 (every start);
@@ -512,6 +531,7 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 - R19 2026-11-25: segment cleanup fix, SPLASHVERIFY strict, migrate 50%, DRVMOVE, DRVSEAL, race DRVMEM, VRAMHEAD (512 MB). R18 test: open segment deleted every start, imported shards ~30% hits, race hitches = VRAM paging.
 - R20 2026-11-25: DRVSEAL drain, DRVPLAIN (ryty_prewarm), VRAMHEAD reload backoff, RBWAIT, RBBATCH (on), DRVTRACK. R19 test: segments PASS (27673 loaded, 0 rebuilt), splash hang from the early seal, VRAMHEAD thrash in r19-1b, first lap readback waits.
 - R17 2026-11-24: AUDIOFTZ on in GT7. R17 test: audio PASS, no crash; driver cache shards over 1024 MB rotate (R18). R16b test: denormals were the audio crackle (80-92% to 15-18%, underruns 0); AUDIOCORE no gain.
+- R20 test 2026-11-25: DRVSEAL and DRVPLAIN pass; RBWAIT/RBBATCH never ran; DRVTRACK no course paths; DRVSTALE drop rebuilt 8984 at the splash.
 
 ## Fix log (one row per change; test column = owner result)
 | date | repo | commit | what (switches) | default | CI | test |
@@ -636,10 +656,10 @@ Not ported: rygt7 10d6502 "Verbose logs" toggle, c47d3b4 HD UI and all DLSS / HD
 | 2026-11-25 | shadGT | 61aa7159 | Round 19 PRT-DRVMOVE: a miss in a sealed segment always moves the pipeline to the open segment, once (`RYGT_DRIVER_CACHE_MISS_MOVE`, 0 = R18 rule) | GT7 on | R18 run: 0 moved | works 2026-11-25: 318 moved after a miss (r19-2) |
 | 2026-11-25 | shadGT | 61aa7159 | Round 19 PRT-DRVMEM race lines: private MB (+/- in 10 s) and working set every 10 s in a race (`RYGT_DRIVER_CACHE_MEM_LOG`) | GT7 on | none | works 2026-11-25: race private 18.1-19.1 GB flat (r19-1b), exit private 11.6 GB (r19-2) |
 | 2026-11-25 | shadGT | 61aa7159 | Round 19 PRT-VRAMHEAD: idle guest textures evicted early from budget - headroom, harder near the budget; 10 s line with VRAM, target, MB freed, over budget checks, reloads (`RYGT_VRAM_HEADROOM_MB`) | GT7 512 | R18 run: paging hitches at 6300+ MB | mixed 2026-11-25: r19-1b thrash (VRAM 6.7-7.4 GB, up to 567 MB made again in 10 s); r19-2 5.8-6.3 GB, over budget only briefly |
-| 2026-11-25 | shadGT | 05d3390e | Round 20 PRT-DRVSEAL drain: creates in flight counted per segment; seal switches new creates to a fresh open segment, reads only at 0 in flight (30 s timeout, retried every 10 s); every segment save read the same way; early seal from an estimate, no driver size query while creates run (`RYGT_DRIVER_CACHE_SEAL_DRAIN`) | GT7 on | r19-1: splash hang, seg3 sealed with 34 creates in flight | owner test pending |
-| 2026-11-25 | RyGT | 266cdac | Round 20 PRT-DRVPLAIN: tools\ryty_prewarm.exe no longer compiles into or writes the plain <cache>.vkpipelinecache when a <cache>.segindex is there (`RYGT_DRIVER_CACHE_PLAIN_SKIP`, switch row in shadGT 05d3390e) | on | r19: 7 MB plain file written every run, deleted every start | owner test pending |
-| 2026-11-25 | shadGT | 05d3390e | Round 20 PRT-VRAMHEAD reload backoff: made again within 10 s = kept for the race; reloads over 30% of MB let go halve the rate (down to 1/8), normal after 30 s quiet; line adds kept after reload (`RYGT_VRAM_HEAD_BACKOFF`) | GT7 on | r19-1b: up to 567 MB made again in 10 s | owner test pending |
-| 2026-11-25 | shadGT | 05d3390e | Round 20 PRT-RBWAIT: readback fence time to data landed per caller site and size, top 5 every 10 s in races (`RYGT_READBACK_WAIT_LOG`, log only) | GT7 on | r19-2: 100+ small readback waits a frame at the race start | owner test pending |
-| 2026-11-25 | shadGT | 05d3390e | Round 20 PRT-RBBATCH: readback fences of a batch ride one submit, one GPU wait; data lands before each label, waits/WAIT_REG_MEM/recorder idle submit first, EOP/spun/earlier-deferred/label-in-target never held, 2000 us cap (`RYGT_READBACK_BATCH`), owner OK 14:27 on | GT7 on (2000 us), GT Sport off | r19-2: first lap readback waits up to 529 ms | owner test pending |
-| 2026-11-25 | shadGT | 05d3390e | Round 20 PRT-DRVTRACK: new pipelines built while a track is loaded go to that track's own open segment (course path from the RyGT file layer, RytyGpuNoteGuestFile export), track per segment and entry in the index, track aged out as a unit after 5 counted sessions unused, RAM per segment in the PRT-DRVSEG line, guest folder diag lines (`RYGT_DRIVER_CACHE_TRACK`) | GT7 on | none | owner test pending |
-| 2026-11-25 | RyGT | 266cdac | Round 20 PRT-DRVTRACK: libkernel sceKernelOpen passes read-only opens to the renderer's RytyGpuNoteGuestFile (`RYGT_DRIVER_CACHE_TRACK`, 0 = off) | on | none | owner test pending |
+| 2026-11-25 | shadGT | 05d3390e | Round 20 PRT-DRVSEAL drain: creates in flight counted per segment; seal switches new creates to a fresh open segment, reads only at 0 in flight (30 s timeout, retried every 10 s); every segment save read the same way; early seal from an estimate, no driver size query while creates run (`RYGT_DRIVER_CACHE_SEAL_DRAIN`) | GT7 on | r19-1: splash hang, seg3 sealed with 34 creates in flight | r20: PASS, drained 39 ms, no hang |
+| 2026-11-25 | RyGT | 266cdac | Round 20 PRT-DRVPLAIN: tools\ryty_prewarm.exe no longer compiles into or writes the plain <cache>.vkpipelinecache when a <cache>.segindex is there (`RYGT_DRIVER_CACHE_PLAIN_SKIP`, switch row in shadGT 05d3390e) | on | r19: 7 MB plain file written every run, deleted every start | r20: PASS, no plain file line |
+| 2026-11-25 | shadGT | 05d3390e | Round 20 PRT-VRAMHEAD reload backoff: made again within 10 s = kept for the race; reloads over 30% of MB let go halve the rate (down to 1/8), normal after 30 s quiet; line adds kept after reload (`RYGT_VRAM_HEAD_BACKOFF`) | GT7 on | r19-1b: up to 567 MB made again in 10 s | r20: run 1 race 56 kept, no thrash |
+| 2026-11-25 | shadGT | 05d3390e | Round 20 PRT-RBWAIT: readback fence time to data landed per caller site and size, top 5 every 10 s in races (`RYGT_READBACK_WAIT_LOG`, log only) | GT7 on | r19-2: 100+ small readback waits a frame at the race start | r20: no lines, never ran (waits have no data) |
+| 2026-11-25 | shadGT | 05d3390e | Round 20 PRT-RBBATCH: readback fences of a batch ride one submit, one GPU wait; data lands before each label, waits/WAIT_REG_MEM/recorder idle submit first, EOP/spun/earlier-deferred/label-in-target never held, 2000 us cap (`RYGT_READBACK_BATCH`), owner OK 14:27 on | GT7 on (2000 us), GT Sport off | r19-2: first lap readback waits up to 529 ms | r20: never ran, hitches unchanged |
+| 2026-11-25 | shadGT | 05d3390e | Round 20 PRT-DRVTRACK: new pipelines built while a track is loaded go to that track's own open segment (course path from the RyGT file layer, RytyGpuNoteGuestFile export), track per segment and entry in the index, track aged out as a unit after 5 counted sessions unused, RAM per segment in the PRT-DRVSEG line, guest folder diag lines (`RYGT_DRIVER_CACHE_TRACK`) | GT7 on | none | r20: no course paths, no effect |
+| 2026-11-25 | RyGT | 266cdac | Round 20 PRT-DRVTRACK: libkernel sceKernelOpen passes read-only opens to the renderer's RytyGpuNoteGuestFile (`RYGT_DRIVER_CACHE_TRACK`, 0 = off) | on | none | r20: no course paths |
