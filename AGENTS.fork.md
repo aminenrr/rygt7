@@ -53,7 +53,8 @@ Read in order: Owner, Rules, Where things stand, Next round. The Fix log is the 
 - SHADGT_PREWARM / PERF-038 must stay off on GT7 (device lost on RTX 4070).
 - Driver cache (R18): segments of about 600 MB, max 4 (2.4 GB) by default; driver keeps loaded files in RAM
   (FIX-SGT-010: 2.96 GB file -> 15 GiB resident). PRT-DRVHIT + PRT-DRVMEM now measure hits and RAM per file.
-- VRAM budget 6342 MB on an 8 GB laptop; races sit at 7.0 to 7.4 GB.
+- VRAM budget 6342 MB on an 8 GB laptop; races sit at 7.0 to 7.4 GB. R18: hitches of 250-500 ms come from
+  WDDM paging at VRAM >= ~6300 MB (GPU 88-135 ms a frame); R19 PRT-VRAMHEAD keeps 512 MB of headroom.
 
 ## Where things stand (after Round 10 test, 2026-11-23)
 Last build: shadGT 6d202135, RyGT 47cfc6e, CI run 45229829369. Later RyGT commits are docs only ([skip ci]).
@@ -326,6 +327,60 @@ Start 3: "PRT-DRVSEG: segN ... segment file missing" and PRT-SPLASHVERIFY rebuil
 splash (with the launcher pass on, the launcher pass rebuilds them first and the splash skips them).
 Not checked locally: Windows build (CI is the compile); runtime behavior.
 
+## Round 18 test results (owner 2026-11-25 GMT, defaults + launcher Unlimited, logs work/logs/r18/1 and /2 in the Hark project)
+- Bug A: every start (launcher pass and game) logged "PRT-DRVSEG: old single file ...vkpipelinecache.seg2 (7 MB)
+  deleted": the cleanup took driver_cache_path by reference after it was set to the open segment, so it deleted
+  the open segment every start. Run 2 game start: "seg2 segment file missing", seg2 hits 20/270 (7%). The plain
+  old .vkpipelinecache (8 MB) stayed on disk.
+- Bug B: PRT-SPLASHVERIFY run 2 said 27099/27099 in a loaded segment, 0 rebuilt, although seg2 was missing (the
+  check trusted any index entry, also ones the old hash rule put in an imported shard that session).
+- Migrated shards: in-game driver hits only ~30% (run 1 seg0 1768/5677, seg1 1711/5737; run 2 29.6%/28.8%),
+  launcher pass 41%; kept by the 10% rule. Miss create time run 1 game ~58 s, run 2 ~8.3 s. 0 misses moved to
+  the open segment (the 50% segment hit rule blocked it).
+- PRT-DRVMEM: after the load private ~4.0 GB (+3.15 GB); at exit game 14.6-15.0 GB private, launcher pass ~10.2 GB.
+- Hitches: 59 (run 1) vs 57 (run 2) HITCHLOG lines. Race hitches run 2 were readback DeferFenceSignal fence waits
+  (up to 467 ms). Root cause: only when VRAM >= ~6300 of 6342 MB, GPU per frame jumps to 88-135 ms (normal 16 ms) =
+  WDDM paging, readback fences then wait. Run 2 VRAM 6175-6630 MB (over budget most of the race); run 1 5.8-5.9 GB,
+  only 50-100 ms hitches (GPU 16-20 ms). VRAMTRIM/VRAMIDLE only react after over budget. Imported views 1421 held
+  = 2922 MiB (host memory). Early "game CPU" frames up to 1570 ms while loading (likely compiles).
+- No FIX-SGT-010 move to .old. Segment cap "none (Unlimited)" (launcher Unlimited on).
+
+## Round 19 (owner GO 2026-11-25 12:01 GMT, built shadGT 61aa7159)
+All items GT7 only, on by default in GT7 (owner OK). Plan (work/r18/r19-plan.md):
+1. Legacy cleanup deletes only the plain <cache>.vkpipelinecache (once, the owner has an 8 MB one), never
+   .segN/.segindex. Fix: PrtCreateDriverSegments copies the base path (it was a reference to driver_cache_path,
+   set to the open segment inside the function) and checks the name ends in .vkpipelinecache
+   (`RYGT_DRIVER_CACHE_SINGLE_DELETE`).
+2. SPLASHVERIFY strict (`RYGT_SPLASH_VERIFY` 2 in GT7; 1 = R18 check, 0 = off): a prewarm.built record is skipped
+   only when its index entry was read at start for a segment file that loaded data (open segment included).
+   Missing/rejected/dropped segment, or put in a segment this start and not saved, -> built at the splash.
+   Reasons in the line now include "not in a segment file loaded this start".
+3. Migrate rule 50% (`RYGT_DRIVER_CACHE_MIGRATE`: 0 off, 1 = 50, 2-100 = percent): an imported shard under 50% hits
+   (100+ creates) is dropped once. Shards kept by R18's 10% rule are judged again (index judged field now holds the
+   percent). Index writes "migrated 0" once no imported shard is left. PRT-DRVSEAL (`RYGT_DRIVER_CACHE_SEAL_EARLY`):
+   out of a race, every 1000 new pipelines in the open segment the driver size is checked; past 600 MB it is
+   saved and sealed at once, so the splash rebuild fills fresh ~600 MB segments.
+4. PRT-DRVMOVE (`RYGT_DRIVER_CACHE_MISS_MOVE`, 0 = R18 50% rule): a miss in a sealed segment always moves the
+   pipeline to the open segment, once (in the open segment it is no longer in a sealed one). Index updated.
+5. PRT-DRVMEM (`RYGT_DRIVER_CACHE_MEM_LOG`): also every 10 s in a race: private MB (+/- in 10 s), working set.
+6. Readback fence hitches: parked (small 50-100 ms ones are real round trip latency; big ones are item 7).
+7. PRT-VRAMHEAD (`RYGT_VRAM_HEADROOM_MB` 512 in GT7, 0 = off): from budget - 512 (5830 of 6342 MB), idle textures
+   loaded from guest memory go early, 4 a frame idle >= 120 frames at the start of the headroom, the kept
+   textures too from a quarter in, up to 64 a frame idle >= 30 frames at the budget. GPU written pictures
+   (FIX-157, FIX-GT7-153) stay. VRAM read every 10 frames. Line every 10 s in a race (or when it let textures
+   go): VRAM, peak, target, textures and MB let go, checks over budget, let go textures made again (reloads = pop
+   risk). Imported views are not evicted by it: PRT-VRAMREG counts them as host memory, not VRAM (judgment call).
+Not done: shard fallback (`RYGT_DRIVER_CACHE_SHARDS`) removal waits for a passing DRVSEG test. Launcher not touched.
+Not checked locally: Windows build (CI is the compile); runtime behavior; the size query of PRT-DRVSEAL during the
+splash may wait for the lookup lock (then it tries again each second).
+
+Test ask (owner, after CI): defaults (no bat changes needed).
+1. Start (expect one long splash rebuild after the imported shards drop), race several laps, exit.
+2. Start again, race, exit. Send stdout.log of both starts.
+Expect: no "old single file .segN deleted" line (one "old single file ...vkpipelinecache (8 MB) deleted" on the
+first start is fine), PRT-DRVMIGRATE "dropped once" for seg0/seg1, PRT-DRVSEAL / sealed lines during the rebuild,
+PRT-DRVHIT high on the 2nd start, PRT-VRAMHEAD lines and VRAM staying under 6342 MB in races, PRT-DRVMEM race lines.
+
 ## Parked (do not start, remind the owner)
 Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
 SaveData exports; garage nvoglv64.dll crash; camera hook signature mismatch at RVA 0x86b030 (every start);
@@ -336,6 +391,8 @@ one-off frame budget. Fix idea: photo window ignores that budget.
 Research (parked, owner 2026-11-24): (1) faster shader compilation (translation + driver pipeline build time);
 (2) a shader manifest stored next to the game save, used by the launcher prewarm to rebuild the shader cache
 when the shader folder is deleted.
+Readback fence hitches (R19 item 6): small 50-100 ms readback waits are real round trip latency; the big ones
+were VRAM paging (R19 PRT-VRAMHEAD). Revisit only if they stay after PRT-VRAMHEAD.
 Deferred: .meta compression of the shader store, VMA defrag, PRELOADEVICT.
 Upstream picks not taken: FIX-SGT-116, FEAT-SGT-118 (#108, parked), FIX-SGT-119, review fix 88d1d70c (conflicts); #99 HDR (dropped);
 FIX-SGT-124, PERF-SGT-126 (AMD only); FIX-GTS-528/529 (GT Sport).
@@ -359,6 +416,7 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 - R16 2026-11-24: AUDIOMXCSR log, AUDIOFTZ (off). R15 test: red-zone skip works but no audio gain (thread still 80-98%).
 - R16b 2026-11-24: AUDIOFAULT log, AUDIOCORE (off). R16 CI cancelled before test.
 - R18 2026-11-24: DRVHIT, DRVSEG (segments + index, no rotation), DRVSTALE, SPLASHVERIFY, DRVMIGRATE, DRVMEM, DRVSAFE, DRVSAVE; shards fallback off.
+- R19 2026-11-25: segment cleanup fix, SPLASHVERIFY strict, migrate 50%, DRVMOVE, DRVSEAL, race DRVMEM, VRAMHEAD (512 MB). R18 test: open segment deleted every start, imported shards ~30% hits, race hitches = VRAM paging.
 - R17 2026-11-24: AUDIOFTZ on in GT7. R17 test: audio PASS, no crash; driver cache shards over 1024 MB rotate (R18). R16b test: denormals were the audio crackle (80-92% to 15-18%, underruns 0); AUDIOCORE no gain.
 
 ## Fix log (one row per change; test column = owner result)
@@ -468,12 +526,19 @@ Not ported: rygt7 10d6502 "Verbose logs" toggle, c47d3b4 HD UI and all DLSS / HD
 | 2026-11-24 | shadGT | 9f99af6b | Round 16b PRT-AUDIOFAULT: exceptions on the audio thread + process page faults in PRT-AUDIOLOAD (`RYGT_AUDIO_FAULT_LOG`, log only) | GT7 on | R16b run | 0 exceptions |
 | 2026-11-24 | RyGT | see log | Round 16b PRT-AUDIOCORE: audio thread gets the last P-core alone, rest of the game kept off it (`RYGT_AUDIO_CORE`) | off | R16b run 3 | no gain, stays off |
 | 2026-11-24 | shadGT | ba225657 | Round 17 PRT-AUDIOFTZ on by default in GT7 (`RYGT_AUDIO_FTZ`, 0 = off): denormal fix for race audio crackle | GT7 on | R16b run 2: audio 15-18%, underruns 0 | PASS 2026-11-24: FTZ held, audio max 20%, no crackle, no crash |
-| 2026-11-24 | shadGT | 6fa0c920 | Round 18 PRT-DRVHIT: pipeline creation feedback on graphics (library, link, whole) and compute creates, hits per driver cache file every 10 s and at exit (`RYGT_DRIVER_CACHE_HIT_LOG`) | GT7 on | R18 run | owner test pending |
-| 2026-11-24 | shadGT | 1b282401 | Round 18 PRT-DRVSEG: driver cache in ~600 MB segments + index, sealed segments loaded every start and never saved, only the open one saved, no rotation (`RYGT_DRIVER_CACHE_SEGMENTS`, `RYGT_DRIVER_CACHE_SEG_MB`, `RYGT_DRIVER_CACHE_SEG_MAX`) | GT7 on, 600, 4 (none with Unlimited) | R18 run | owner test pending |
+| 2026-11-24 | shadGT | 6fa0c920 | Round 18 PRT-DRVHIT: pipeline creation feedback on graphics (library, link, whole) and compute creates, hits per driver cache file every 10 s and at exit (`RYGT_DRIVER_CACHE_HIT_LOG`) | GT7 on | R18 run | works 2026-11-25: imported shards ~30% in game, 41% launcher pass |
+| 2026-11-24 | shadGT | 1b282401 | Round 18 PRT-DRVSEG: driver cache in ~600 MB segments + index, sealed segments loaded every start and never saved, only the open one saved, no rotation (`RYGT_DRIVER_CACHE_SEGMENTS`, `RYGT_DRIVER_CACHE_SEG_MB`, `RYGT_DRIVER_CACHE_SEG_MAX`) | GT7 on, 600, 4 (none with Unlimited) | R18 run | FAIL 2026-11-25: open seg2 deleted every start (fixed R19) |
 | 2026-11-24 | shadGT | 1b282401 | Round 18 PRT-DRVSTALE: sealed segment mostly unused for 5 counted sessions (race or Scapes) or least used one over the cap dropped, used pipelines rebuilt at the splash (`RYGT_DRIVER_CACHE_STALE`) | GT7 5 | R18 run | owner test pending |
-| 2026-11-24 | shadGT | 1b282401 | Round 18 PRT-SPLASHVERIFY: prewarm.built records skipped only when in a loaded segment; missing, rejected, dropped or other-driver ones rebuilt at the splash; header check per segment (`RYGT_SPLASH_VERIFY`) | GT7 on | R18 run | owner test pending |
-| 2026-11-24 | shadGT | 1b282401 | Round 18 PRT-DRVMIGRATE: .shard0/.shard1 imported as sealed segments 0/1, dropped once if under 10% hits after a session (`RYGT_DRIVER_CACHE_MIGRATE`) | GT7 on | R18 run | owner test pending |
-| 2026-11-24 | shadGT | 1b282401 | Round 18 PRT-DRVMEM: process private bytes / working set after the driver cache load and at exit (`RYGT_DRIVER_CACHE_MEM_LOG`) | GT7 on | R18 run | owner test pending |
+| 2026-11-24 | shadGT | 1b282401 | Round 18 PRT-SPLASHVERIFY: prewarm.built records skipped only when in a loaded segment; missing, rejected, dropped or other-driver ones rebuilt at the splash; header check per segment (`RYGT_SPLASH_VERIFY`) | GT7 on | R18 run | FAIL 2026-11-25: 0 rebuilt with seg2 missing (strict in R19) |
+| 2026-11-24 | shadGT | 1b282401 | Round 18 PRT-DRVMIGRATE: .shard0/.shard1 imported as sealed segments 0/1, dropped once if under 10% hits after a session (`RYGT_DRIVER_CACHE_MIGRATE`) | GT7 on | R18 run | kept at ~30% hits (50% rule in R19) |
+| 2026-11-24 | shadGT | 1b282401 | Round 18 PRT-DRVMEM: process private bytes / working set after the driver cache load and at exit (`RYGT_DRIVER_CACHE_MEM_LOG`) | GT7 on | R18 run | works: +3.15 GB at load, 14.6-15.0 GB private at exit |
 | 2026-11-24 | shadGT | 1b282401 | Round 18 PRT-DRVSAFE: segment index written temp + verify + rename (`RYGT_DRIVER_CACHE_SAFE_WRITE`) | GT7 on | R18 run | owner test pending |
 | 2026-11-24 | shadGT | 1b282401 | Round 18 PRT-DRVSAVE: open segment saved after the splash prewarm and when idle in menus (20 s no new pipelines, 60 s since last save), PRT-DRVSAVE line per save (`RYGT_DRIVER_CACHE_IDLE_SAVE`) | GT7 on | R18 run | owner test pending |
 | 2026-11-24 | shadGT | 1b282401 | Round 18 `RYGT_DRIVER_CACHE_SHARDS` fallback only, default off (was 2 in GT7); set, it turns DRVSEG off. Remove in R19 | off | R18 run | owner test pending |
+| 2026-11-25 | shadGT | 61aa7159 | Round 19 PRT-DRVSEG cleanup fix: old single file cleanup deletes only the plain <cache>.vkpipelinecache, never the open segment (base path copied, not a reference to driver_cache_path) (`RYGT_DRIVER_CACHE_SINGLE_DELETE`) | GT7 on | R18 run: seg2 deleted every start | owner test pending |
+| 2026-11-25 | shadGT | 61aa7159 | Round 19 PRT-SPLASHVERIFY strict: record skipped only when its index entry was read at start for a segment file that loaded data (`RYGT_SPLASH_VERIFY` 2; 1 = R18) | GT7 2 | R18 run: 0 rebuilt with seg2 missing | owner test pending |
+| 2026-11-25 | shadGT | 61aa7159 | Round 19 PRT-DRVMIGRATE 50%: imported shard under 50% hits dropped once, shards kept by the 10% rule judged again (`RYGT_DRIVER_CACHE_MIGRATE` percent) | GT7 50 | R18 run: ~30% hits | owner test pending |
+| 2026-11-25 | shadGT | 61aa7159 | Round 19 PRT-DRVSEAL: open segment size checked every 1000 new pipelines out of a race, saved and sealed past 600 MB (`RYGT_DRIVER_CACHE_SEAL_EARLY`) | GT7 on | none | owner test pending |
+| 2026-11-25 | shadGT | 61aa7159 | Round 19 PRT-DRVMOVE: a miss in a sealed segment always moves the pipeline to the open segment, once (`RYGT_DRIVER_CACHE_MISS_MOVE`, 0 = R18 rule) | GT7 on | R18 run: 0 moved | owner test pending |
+| 2026-11-25 | shadGT | 61aa7159 | Round 19 PRT-DRVMEM race lines: private MB (+/- in 10 s) and working set every 10 s in a race (`RYGT_DRIVER_CACHE_MEM_LOG`) | GT7 on | none | owner test pending |
+| 2026-11-25 | shadGT | 61aa7159 | Round 19 PRT-VRAMHEAD: idle guest textures evicted early from budget - headroom, harder near the budget; 10 s line with VRAM, target, MB freed, over budget checks, reloads (`RYGT_VRAM_HEADROOM_MB`) | GT7 512 | R18 run: paging hitches at 6300+ MB | owner test pending |
