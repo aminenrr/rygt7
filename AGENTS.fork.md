@@ -486,12 +486,78 @@ Test ask (owner, after CI):
 - RAM: run 2 race private 21.2 GB (R19 race 18.1 to 19.1 GB). Exit 19.3 GB.
 - Audio: AUDIOFTZ set 0 times (thread already has FTZ+DAZ).
 
-## Round 21 plan (proposal, waiting owner OK)
-1. PRT-RBWAIT v2 (log): count every deferred fence by why it was deferred (has data / address order / background readback / not held) and site, in races and loading; top 5 every 10 s.
-2. PRT-RBBATCH v2: also batch fences deferred only for order (no data of their own), same guard (data before label, waits and WAIT_REG_MEM and recorder idle submit first, spun labels never held). On in GT7 per owner OK 2026-11-25 14:27.
-3. PRT-DRVSTALE v2: when a segment is dropped, keep its used pipelines (moved to the open segment) and mark its unused launcher records stale, so the splash and the launcher pass skip them. No 12 s rebuild after a drop.
-4. DRVTRACK: switch default off (no course paths). Option for later: map gt.idx volume reads to course ids.
-5. Unknown 25 fps stretch in run 2: owner to say what screen that was; then decide.
+## Round 21 plan (owner GO 2026-11-25 22:38 GMT; replaces the proposal; plan file work/r21/r21-plan.md in the Hark project)
+1. Menu/main map textures break after many track/race changes (since R16, worse since R19 VRAMHEAD; restart fixes):
+   1a PRT-TEXSTALE log, 1b PRT-TEXREFRESH at race context end, 1c PRT-PROTECTFAIL (VirtualProtect 487 ranges untracked). Report the
+   VRAMHEAD/TRIM/IDLE recreate path and STAGESHRINK kept copies; no change there without a switch.
+2. PRT-DRVSTALE v2: drop a sealed segment only under 10% used in the last 5 counted sessions; used pipelines move to the open segment,
+   unused launcher records marked stale (no 12 s splash rebuild).
+3. PRT-RBWAIT v2 (every deferred fence by reason and site, races and loading) and PRT-RBBATCH v2 (order-only fences batched too). On in
+   GT7 (owner OK 2026-11-25 14:27).
+4. RYGT_DRIVER_CACHE_TRACK default off in GT7.
+Not now: new content build stalls 22:07/22:22 (up to 1.65 s), RAM 18.1 GB.
+
+## Round 21 (owner GO 2026-11-25 22:38 GMT, built shadGT 9ca471dd)
+All GT7 only, GT Sport defaults unchanged. Defaults per plan: all on in GT7, item 4 off. RyGT code 2733e81 (Open.cpp).
+1a. PRT-TEXSTALE (`RYGT_TEX_STALE_LOG`, GT7 on, log only): every upload of a texture loaded from guest memory takes a sample hash of its
+    guest bytes (PrtProbeHash: 4 x 4 KB at 0, 1/3, 2/3, end; whole range up to 16 KB). Out of a race (RytyGtsInRace and RytyRaceRunning
+    both off), each frame up to 64 textures used this frame or the last (4 registry shards a frame, all 64 in 16 frames) that came from
+    guest memory (from_cpu, no GPU write, not made of targets, not stale) are hashed again. A difference while the cache still takes it
+    for valid (needs_upload still off after the hash) is a Warning line, first 50 in detail: address, size, WxH, format, mips, layers,
+    tile and array mode, how made (fresh / made again after PRT-VRAMHEAD, PRT-VRAMTRIM or PRT-VRAMIDLE let it go, matched by address and
+    size / recycled frame texture image PERF-SGT-021 / last upload from a kept upload copy PERF-GT7-130 / revalidated by TEXREFRESH),
+    frames since its last upload, uploads and source kind, made frame, first and last page write tracked (native tracker) and whether it
+    lies in a PRT-PROTECTFAIL range, last stale reason. 10 s line: checks, differences by origin.
+1b. PRT-TEXREFRESH (`RYGT_TEX_REFRESH`, GT7 on): race context ends (RytyGtsInRace or RytyRaceRunning goes off): over 16 frames every
+    guest memory texture is looked at: sample hash changed = uploaded again at its next use (NAT-109 hash forgotten); unchanged and up to
+    4 MB = marked stale, so its next use checks its full NAT-109 hash and uploads only when changed; larger unchanged left. A TEXSTALE
+    difference is uploaded again too. One line per race end: textures looked at, frames, changed (MB), checked again, large left, ms.
+1c. PRT-PROTECTFAIL (`RYGT_PROTECT_FAIL_UNTRACK`, GT7 on): ryty_core_shims.cpp AddressSpace::Protect records each failed VirtualProtect
+    (range, protection, error, thread, VirtualQuery state). A failed write watch: the renderer logs the range once with its owner (memory
+    region and allocation, state/type/protect, textures and targets there with the first few named, regions, mirrors, whether the native
+    tracker counts its pages watched) and from then on hashes the range every frame; a change is handled as a CPU write fault (region
+    pages get their before-write copy, FIX-173; registry CpuWrite: textures there upload again at next use, small ones only when their
+    bytes changed). Dropped when the mapping changes (allocation base or state, checked every 60 frames). Failures opening pages: logged
+    only (first 20).
+2. PRT-DRVSTALE v2 (`RYGT_DRIVER_CACHE_STALE_V2`, GT7 on; 0 = R18 rule): exit drop only when under 10% of a sealed segment's pipelines
+   were used in the last 5 counted sessions (10% to 50% now logs "kept"). On any drop (this rule, cap, DRVMIGRATE, DRVTRACK) the used
+   pipelines leave the index, so the splash prewarm builds them again into the open segment (there is no driver data to move them with),
+   and the unused ones stay in the index as "X hash session" lines (older builds ignore them). Splash: SPLASHVERIFY treats stale records
+   as verified (skipped), and the record list drops stale keys before building (splash and launcher pass). A stale pipeline the game
+   builds again leaves the stale list. Lines: "PRT-DRVSTALE v2: ...", exit summary (used left the index, stale added, stale in index).
+3. PRT-RBWAIT v2 (`RYGT_READBACK_WAIT_V2`, GT7 on, log only): every deferred fence counted by reason (has data / address order FIX-049 /
+   background readback pending / direct hold) and caller file:line, timed DeferFenceSignal to label landed, submitted at once vs rode a
+   later submit. Every 10 s in a race, and out of a race when the window waited 500 ms or more (loading). PRT-RBBATCH v2
+   (`RYGT_READBACK_BATCH_ORDER`, GT7 on with RYGT_READBACK_BATCH): a fence that submits at once only for address order (address_pending,
+   or an earlier deferred write with no direct hold; no data of its own) rides the held batch; same guard as R20 (data before label,
+   Scheduler::Wait, WAIT_REG_MEM and recorder idle submit first; EOP flush, SHADGT_DIRECT_HOLD_FLUSH, spun labels, label in a readback
+   target never held; RYGT_READBACK_BATCH us cap). Count in the v2 line.
+4. `RYGT_DRIVER_CACHE_TRACK` default off in GT7 (renderer and RyGT libkernel Open.cpp; 1 = on).
+Not checked locally: Windows build (CI is the compile; zig -fsyntax-only passed for image_registry.cpp, ryty_core_shims.cpp with
+-fms-extensions, vk_rasterizer.cpp, vk_pipeline_cache.cpp, vk_rasterizer_native.cpp); runtime behavior.
+Texture cause, from reading the code (not proven):
+- VRAMHEAD/VRAMTRIM/VRAMIDLE: they only let go textures that came from guest memory (from_cpu, at most 2 uploads, never GPU written,
+  not made of targets; VRAMHEAD also loaded_texture). The entry is retired; a later use makes a new entry that uploads from guest memory
+  as it is then (region refreshed first if GPU memory). So a recreated texture holds current guest bytes: if those bytes are wrong the
+  game left them so; no stale reuse found in that path. Their watch ranges go to ReleaseUnusedWatches, which keeps pages any live image,
+  region, mirror or lease still covers. TEXSTALE origin counts will show it if wrong.
+- STAGESHRINK v1 kept copies are PERF-GTS-362 recycled upload buffers (PERF-GT7-130 64 KB mapping copies, kind 5). Each reuse takes a
+  fresh GuardedCopy of guest memory; a used copy goes back to the pool only through device.Retire (after the GPU tick). TrimKeptCopies
+  frees only pooled (idle) ones. No path found where a kept copy feeds a texture old bytes. TEXSTALE "kept upload copy" count checks it.
+- VirtualProtect 487 (0x301f440000, 0x301f460000, 0x302a790000, +0x10000, GpuRecorder): the 0x30xxxxxxxx area is GT7's texture
+  streaming memory (64 KB mappings, PERF-GT7-130; IMAGE-BACKING cancelled 0x3001a60000 there). The protect is a write watch from an
+  upload (WatchPages); it failed after VirtualQuery called the region committed, which points to the 64 KB mapping being changed under
+  the recorder. The native tracker then counts the pages watched while they are writable, and does not protect them again (Track sees
+  the bit set) until an unmap clears it: later CPU writes there are never seen, so textures there stay as first uploaded. That matches
+  a stale picture after many reloads. PRT-PROTECTFAIL owner line will name what lives there.
+- Other gaps seen: NAT-109 CpuWrite marks a texture over 4 MB stale only when the faulting write's own bytes hit it (other writes after
+  a page opened are unseen until the next upload rewatches); SameLayout lets one image serve a T# of another format of the same texel
+  size at the same address (a block format reinterpreted would give saturated colours). Both unverified; TEXSTALE details will tell.
+Risk: TEXREFRESH re-checks every small texture the menu uses after each race (hash at first use, at most 4 MB each): possible short
+menu hitch right after a race; PROTECTFAIL hashes each failed range every frame (64 KB each, few ranges). First start after R21: the
+R20 run 3 exit already dropped seg3/seg4 with no stale marks, so the splash may build those records once (long splash, one time).
+
+Test ask (owner, after CI): defaults, no bat. Long play like run 3, jump tracks until the map breaks, note the time, send stdout.log.
 
 ## Parked (do not start, remind the owner)
 Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
@@ -532,6 +598,8 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 - R20 2026-11-25: DRVSEAL drain, DRVPLAIN (ryty_prewarm), VRAMHEAD reload backoff, RBWAIT, RBBATCH (on), DRVTRACK. R19 test: segments PASS (27673 loaded, 0 rebuilt), splash hang from the early seal, VRAMHEAD thrash in r19-1b, first lap readback waits.
 - R17 2026-11-24: AUDIOFTZ on in GT7. R17 test: audio PASS, no crash; driver cache shards over 1024 MB rotate (R18). R16b test: denormals were the audio crackle (80-92% to 15-18%, underruns 0); AUDIOCORE no gain.
 - R20 test 2026-11-25: DRVSEAL and DRVPLAIN pass; RBWAIT/RBBATCH never ran; DRVTRACK no course paths; DRVSTALE drop rebuilt 8984 at the splash.
+- R20 run 3 2026-11-25 (long play): map textures break after ~20 track changes; DRVSTALE dropped seg3/seg4 (1931/2173 used); VirtualProtect 487 x3.
+- R21 2026-11-25: TEXSTALE, TEXREFRESH, PROTECTFAIL, DRVSTALE v2 (10% rule, stale marks), RBWAIT v2, RBBATCH v2 (order fences), DRVTRACK off.
 
 ## Fix log (one row per change; test column = owner result)
 | date | repo | commit | what (switches) | default | CI | test |
@@ -663,3 +731,10 @@ Not ported: rygt7 10d6502 "Verbose logs" toggle, c47d3b4 HD UI and all DLSS / HD
 | 2026-11-25 | shadGT | 05d3390e | Round 20 PRT-RBBATCH: readback fences of a batch ride one submit, one GPU wait; data lands before each label, waits/WAIT_REG_MEM/recorder idle submit first, EOP/spun/earlier-deferred/label-in-target never held, 2000 us cap (`RYGT_READBACK_BATCH`), owner OK 14:27 on | GT7 on (2000 us), GT Sport off | r19-2: first lap readback waits up to 529 ms | r20: never ran, hitches unchanged |
 | 2026-11-25 | shadGT | 05d3390e | Round 20 PRT-DRVTRACK: new pipelines built while a track is loaded go to that track's own open segment (course path from the RyGT file layer, RytyGpuNoteGuestFile export), track per segment and entry in the index, track aged out as a unit after 5 counted sessions unused, RAM per segment in the PRT-DRVSEG line, guest folder diag lines (`RYGT_DRIVER_CACHE_TRACK`) | GT7 on | none | r20: no course paths, no effect |
 | 2026-11-25 | RyGT | 266cdac | Round 20 PRT-DRVTRACK: libkernel sceKernelOpen passes read-only opens to the renderer's RytyGpuNoteGuestFile (`RYGT_DRIVER_CACHE_TRACK`, 0 = off) | on | none | r20: no course paths |
+| 2026-11-25 | shadGT | 9ca471dd | Round 21 PRT-TEXSTALE: out of a race, up to 64 textures in use a frame from guest memory hashed again (4 x 4 KB samples taken at upload); a difference while valid logged with how it was made and page tracking (`RYGT_TEX_STALE_LOG`, log only) | GT7 on | r20 run 3: main map wrong colours after ~20 track changes | pending |
+| 2026-11-25 | shadGT | 9ca471dd | Round 21 PRT-TEXREFRESH: race context end: guest memory textures looked at over 16 frames, changed ones uploaded again, small ones full hash at next use; TEXSTALE differences uploaded again (`RYGT_TEX_REFRESH`) | GT7 on | r20 run 3 | pending |
+| 2026-11-25 | shadGT | 9ca471dd | Round 21 PRT-PROTECTFAIL: failed write watch (VirtualProtect) recorded, owner logged once, range hashed every frame, change = CPU write (`RYGT_PROTECT_FAIL_UNTRACK`) | GT7 on | r20 run 3: 487 at 0x301f440000, 0x301f460000, 0x302a790000 | pending |
+| 2026-11-25 | shadGT | 9ca471dd | Round 21 PRT-DRVSTALE v2: drop only under 10% used in 5 counted sessions; dropped used pipelines rebuilt at the splash into the open segment, unused ones kept as stale X lines skipped by splash and launcher pass (`RYGT_DRIVER_CACHE_STALE_V2`) | GT7 on | r20: 8984 rebuilt at the splash, run 3 dropped seg3/seg4 with 1931/2173 used | pending |
+| 2026-11-25 | shadGT | 9ca471dd | Round 21 PRT-RBWAIT v2: every deferred fence by reason (data, order, background, direct hold) and site, races and loading, top 5 every 10 s (`RYGT_READBACK_WAIT_V2`, log only) | GT7 on | r20: RBWAIT never ran | pending |
+| 2026-11-25 | shadGT | 9ca471dd | Round 21 PRT-RBBATCH v2: fences deferred only for address order ride the held readback batch, same guard (`RYGT_READBACK_BATCH_ORDER`), owner OK 14:27 on | GT7 on (with RYGT_READBACK_BATCH), GT Sport off | r20: RBBATCH never ran | pending |
+| 2026-11-25 | shadGT + RyGT | 9ca471dd, 2733e81 | Round 21 `RYGT_DRIVER_CACHE_TRACK` default off (renderer and libkernel Open.cpp; 1 = on) | off | r20: no course paths | pending |
