@@ -559,6 +559,36 @@ R20 run 3 exit already dropped seg3/seg4 with no stale marks, so the splash may 
 
 Test ask (owner, after CI): defaults, no bat. Long play like run 3, jump tracks until the map breaks, note the time, send stdout.log.
 
+## Round 21 test results (owner 2026-11-26 00:31-01:10 GMT, defaults, one long run, logs work/logs/r21 in the Hark project)
+- Two races back to back: 00:33:30-00:38:30 and 00:39:10-00:44:00 GMT, then many track loads. Main map broke at 01:10 (sky and fog solid green; R20 run 3 at 22:28 was cyan/red/yellow). Restart fixes it. Owner: bug seen since R16, worse now.
+- PRT-TEXSTALE: about 400k guest-memory texture checks out of races, 0 stale, by every origin. PRT-TEXREFRESH: 0 changed after each race end (e.g. 01:09:43: 310 looked at, 0 changed). So the broken map is NOT a guest-memory texture: it is a GPU-made picture (sky, fog, lighting pass). TEXSTALE and TEXREFRESH did their job and can go off.
+- No VirtualProtect 487 this run, so PRT-PROTECTFAIL never fired.
+- At the break: menu VRAM 7197-7467 MB of 6342 (VRAMREG: render target 1276 MB (512), texture 886 MB, kept GPU picture 95 MB, other 4271-4499 MB; VMA device-local 6226 MB with 1369 MB free inside), over budget at every check. No out-of-memory errors anywhere.
+- Race 1 stutter 00:36:13-14: 500, 468, 387 ms frames, cause readback DeferFenceSignal (vk_rasterizer.cpp:3887), GPU 101-138 ms a frame, VRAM 6745-6835 MB = WDDM paging again. VRAM climbed 6278 (00:35:08) to 6864 MB (00:36:18) while PRT-VRAMHEAD sat at rate 1/8 (R20 backoff) with 679 textures kept this race; the growth is mostly render targets and other, which VRAMHEAD does not touch.
+- PRT-RBBATCH v2: order-only (FIX-049) fences dominate: ~130k per 10 s in races, ~120k of them rode a later submit; fence to label 157-382 s per 10 s (threads add up), max 471 ms. Top sites liverpool.cpp:3946, 2699, 2777. 136 race hitch lines (R20 run 3: 83). Owner: performance a bit worse, more hitches. Likely RBBATCH v2 adds latency.
+- PRT-DRVSTALE v2: PASS. No segment dropped, index 34638 pipelines, splash rebuilt 0 (SPLASHVERIFY 30194 of 30194). DRVHIT session 20.5%.
+- DRVTRACK: off in R21, so no track lines (owner asked; GT7 reads tracks through gt.idx).
+- New track compile stalls (guest clock held, 30 to 620 build jobs): 00:50:41 2.4 s, 01:03:27 3.4 s, 01:05:14-27 up to 1.8 s, 01:06:35-46 up to 2.4 s, 01:07:33 1.0 s.
+- RAM: exit 19520 MB private, working set 10004 MB. VRAM peak 8914 MB (loading).
+
+## Round 22 plan (draft, owner asked 2026-11-26 01:18 GMT for a handoff so another agent builds it; confirm GO with the owner before code)
+Upstream shadGT picks (RyGT-Team/shadGT ryty-gpu; owner OK 2026-11-26 00:30 GMT), each behind its own RYGT_* switch, GT7 only, Fix log row:
+1. #137 FIX-SGT-158 (merged): free replaced and stale pictures after 4 unused frames, not 2 s (License Test TRY AGAIN VRAM jump ~1.8 GB). Likely hits the menu VRAM growth above.
+2. #122 FIX-GT7-195 (merged): unbounded reads past GT7 per-frame memory cut at its end (0 fps after ~30 min, RyGT#99).
+3. #124 FIX-GT7-196 (merged): reads past GT7's culling block cut 64 MB after it (same freeze, long sessions with license retries).
+4. #123 FIX-SGT-140 (merged): device memory running out frees, waits and skips instead of stopping the renderer (RyGT#103).
+5. #125 FIX-SGT-141 (open): write-fault AVX save areas thread-local, not on the faulting stack (stack overflow from FIX-SGT-121, which we have; RyGT#78). Check overlap with R21 PROTECTFAIL.
+6. #141 PERF-SGT-167 (open): a sampled, read-only depth buffer stays in the general layout (no pass restart; ~18 draws a frame in GT7 races).
+7. Optional: #129 FIX-SGT-148 (open, GT Sport crash in shared code).
+From the R21 test:
+8. PRT-GPUPIC (`RYGT_GPU_PIC_LOG`, GT7 on, log only): GPU-made pictures (render targets, storage images, kept GPU pictures, recycled frame textures) sampled out of races: log any sampled with no GPU write since it was made (content came from guest memory or a clear), its origin (SHADGT_RECYCLE_FRAME_TEXTURES reuse, after VRAMTRIM/VRAMIDLE/VRAMHEAD eviction, writeback state, MIRROR_KEEP_WRITTEN), and same address reused with another format/swizzle of the same texel size (PRT-TEXALIAS). First 50 detailed, 10 s summary.
+9. PRT-VRAMHEAD v2 (`RYGT_VRAM_HEAD_V2`, GT7 on): no rate backoff while over budget; the "kept this race" list is released when over budget.
+10. `RYGT_READBACK_BATCH_ORDER` default off in GT7 (back to R20 behaviour). Keep RBWAIT v2 log.
+11. `RYGT_TEX_STALE_LOG` and `RYGT_TEX_REFRESH` default off (keep the code).
+Owner quick A/B he can run with his own bat before or with R22: SHADGT_RECYCLE_FRAME_TEXTURES=0 and RYGT_READBACK_BATCH_ORDER=0; if the map survives many track jumps, recycled frame textures are the cause.
+Not now: new track compile stalls (parked research: faster shader compile), RAM 19.5 GB.
+Test ask after R22: defaults, long play with races and many track jumps until the map breaks (note the time), send stdout.log.
+
 ## Parked (do not start, remind the owner)
 Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
 SaveData exports; garage nvoglv64.dll crash; camera hook signature mismatch at RVA 0x86b030 (every start);
@@ -600,6 +630,7 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 - R20 test 2026-11-25: DRVSEAL and DRVPLAIN pass; RBWAIT/RBBATCH never ran; DRVTRACK no course paths; DRVSTALE drop rebuilt 8984 at the splash.
 - R20 run 3 2026-11-25 (long play): map textures break after ~20 track changes; DRVSTALE dropped seg3/seg4 (1931/2173 used); VirtualProtect 487 x3.
 - R21 2026-11-25: TEXSTALE, TEXREFRESH, PROTECTFAIL, DRVSTALE v2 (10% rule, stale marks), RBWAIT v2, RBBATCH v2 (order fences), DRVTRACK off.
+- R21 test 2026-11-26: guest textures never stale (map bug is a GPU-made picture), VRAM 7.2-7.5 GB at the break, VRAMHEAD backoff stuck at 1/8, RBBATCH v2 likely worse, DRVSTALE v2 pass.
 
 ## Fix log (one row per change; test column = owner result)
 | date | repo | commit | what (switches) | default | CI | test |
