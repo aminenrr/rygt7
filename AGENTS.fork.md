@@ -571,7 +571,7 @@ Test ask (owner, after CI): defaults, no bat. Long play like run 3, jump tracks 
 - New track compile stalls (guest clock held, 30 to 620 build jobs): 00:50:41 2.4 s, 01:03:27 3.4 s, 01:05:14-27 up to 1.8 s, 01:06:35-46 up to 2.4 s, 01:07:33 1.0 s.
 - RAM: exit 19520 MB private, working set 10004 MB. VRAM peak 8914 MB (loading).
 
-## Round 22 plan (draft, owner asked 2026-11-26 01:18 GMT for a handoff so another agent builds it; confirm GO with the owner before code)
+## Round 22 plan (draft 2026-11-26 01:18 GMT; built as revised, see Round 22)
 Upstream shadGT picks (RyGT-Team/shadGT ryty-gpu; owner OK 2026-11-26 00:30 GMT), each behind its own RYGT_* switch, GT7 only, Fix log row:
 1. #137 FIX-SGT-158 (merged): free replaced and stale pictures after 4 unused frames, not 2 s (License Test TRY AGAIN VRAM jump ~1.8 GB). Likely hits the menu VRAM growth above.
 2. #122 FIX-GT7-195 (merged): unbounded reads past GT7 per-frame memory cut at its end (0 fps after ~30 min, RyGT#99).
@@ -588,6 +588,46 @@ From the R21 test:
 Owner quick A/B he can run with his own bat before or with R22: SHADGT_RECYCLE_FRAME_TEXTURES=0 and RYGT_READBACK_BATCH_ORDER=0; if the map survives many track jumps, recycled frame textures are the cause.
 Not now: new track compile stalls (parked research: faster shader compile), RAM 19.5 GB.
 Test ask after R22: defaults, long play with races and many track jumps until the map breaks (note the time), send stdout.log.
+
+## Round 22 (owner GO 2026-11-26 01:35 GMT on the revised plan, built shadGT 20da1c5)
+Revised plan (Hark review 2026-11-26, work/r22/r22-review.md in the Hark project): item 9 VRAMHEAD v2 dropped (R21 end: 1698 MB
+free inside VMA blocks while 855 MB over budget, so texture eviction can't close it and no backoff would only thrash reloads);
+PRT-VMAFRAG and PRT-FILLTRIM added; PRT-GPUPIC covers the PRT-VRAMREL2 write-back path (its own lines stop after 32, it kept
+running after 00:49 in R21). All GT7 only unless said; GT Sport defaults unchanged. Upstream ports read the fork RYGT_ name
+first, then the upstream SHADGT_ name, else on in GT7 only (src/video_core/rygt_port_switch.h).
+1. #137 FIX-SGT-158 (`RYGT_FREE_SUPERSEDED`, GT7 on): pictures replaced at their address by another layout, and stale ones,
+   freed after 4 unused frames (EvictSuperseded before the idle eviction). A GPU picture stays when a texture lands over it.
+2. #122 FIX-GT7-195 (`RYGT_PERFRAME_READ_CUT`, GT7 on): reads past GT7 per-frame memory cut at its end (RyGT#99).
+3. #124 FIX-GT7-196 (`RYGT_LISTED_READ_CUT`, GT7 on): reads past the culling block cut 64 MB after it.
+4. #123 FIX-SGT-140 (`RYGT_OOM_RECOVER`, GT7 on; 0 = renderer stops as before): out of device memory, TakeChunk callers
+   that can skip get none, RelieveDeviceMemory waits once a frame for submitted work, write-backs without memory are skipped,
+   the pressure pass evicts every shard (CPU textures after 30 frames, drawn pictures keep 120) and empties the recycle pool.
+   Merged into our EvictImages (PRT-VRAMKEEP over_budget kept, on_main_evict kept). Heap lines on allocation failure (log).
+   The registry's retry of a skipped upload (next frame) is not switched (only runs after an allocation failure).
+5. #125 FIX-SGT-141 (`RYGT_FAULT_XSTATE_TLS`, on in both games: read at DLL load before the game is known; 0 = FIX-SGT-121
+   stack area): AVX save areas thread-local, 4 nesting levels. No overlap with PROTECTFAIL (different file and path).
+   Upstream says not run yet.
+6. #141 PERF-SGT-167 (`RYGT_DEPTH_READ_IN_GENERAL`, GT7 on): sampled read-only depth stays GENERAL, no pass restart.
+7. #129 not taken (GT Sport crash, optional).
+8. PRT-GPUPIC + PRT-TEXALIAS (`RYGT_GPU_PIC_LOG`, GT7 on, log only): every GPU-drawn picture let go is noted with why
+   (VRAMREL2 write-back, replaced FIX-SGT-158, memory pressure, VRAMTRIM over budget, idle 2 s, other). 4 registry shards a
+   frame: a new entry at a let-go GPU picture's address is counted (first 50 detailed when it is a texture from guest memory,
+   old and new size/format/tile, frames since, in or out of race); a texture made from guest memory where a live drawn GPU
+   picture starts = PRT-TEXALIAS (first 50, same or other format); GPU pictures used 30+ frames out of races and never drawn
+   (first 20). 10 s line: let go by why, made again, aliases, undrawn, PRT-VRAMREL2 queued/released/used again, frames
+   PRT-VRAMTRIM was over budget.
+9. PRT-VMAFRAG (`RYGT_VMA_FRAG`, GT7 on): every 10 s: device-local VMA blocks, allocated, free inside (and %), default blocks
+   and each small image pool (Tiny/Small/Medium images), over budget by N MB and how much of it free-inside covers. Over
+   budget (PRT-VRAMTRIM state), every 5 s the empty blocks are freed (TrimEmptyVmaBlocks plus the pools' block vectors).
+   No defrag yet: moving live images needs a local build and a test; the VMAFRAG numbers say which pool to target in R23.
+10. PRT-FILLTRIM (`RYGT_FILL_PATTERN_TRIM`, GT7 on): over budget, kept fill pattern buffers cut to 64 MB (was 256) when the
+    next pattern is made (R21: 254 MB to the end).
+11. Defaults: `RYGT_READBACK_BATCH_ORDER` off (1 = on), `RYGT_TEX_STALE_LOG` and `RYGT_TEX_REFRESH` off (1 = on). Code kept.
+    RBWAIT v2 log stays on.
+Not checked locally: Windows build (CI is the compile). zig -fsyntax-only: vk_rasterizer_native.cpp, vk_rasterizer.cpp, image_registry.cpp, vk_common.cpp, ryty_fault_xstate.cpp clean (only the known libc++ atomic<shared_ptr> asserts).
+Test ask (owner, after CI): defaults, no bat. Long play: races plus many track jumps until the map breaks (note the GMT
+time), send stdout.log. Optional A/B, one variable per run: run A RYGT_VRAM_OVER_RELEASE2=0, run B
+SHADGT_RECYCLE_FRAME_TEXTURES=0.
 
 ## Parked (do not start, remind the owner)
 Opening Movie resets to Off; tess stage + FIX-227 barrier batching; dynamic topology; upstream Mbus
@@ -631,6 +671,7 @@ Dropped for good: DLSS, HD UI, GT Auto, race name tags at 2x HUD.
 - R20 run 3 2026-11-25 (long play): map textures break after ~20 track changes; DRVSTALE dropped seg3/seg4 (1931/2173 used); VirtualProtect 487 x3.
 - R21 2026-11-25: TEXSTALE, TEXREFRESH, PROTECTFAIL, DRVSTALE v2 (10% rule, stale marks), RBWAIT v2, RBBATCH v2 (order fences), DRVTRACK off.
 - R21 test 2026-11-26: guest textures never stale (map bug is a GPU-made picture), VRAM 7.2-7.5 GB at the break, VRAMHEAD backoff stuck at 1/8, RBBATCH v2 likely worse, DRVSTALE v2 pass.
+- R22 2026-11-26: ports #137 #122 #124 #123 #125 #141, GPUPIC/TEXALIAS, VMAFRAG (empty block trim), FILLTRIM; RBBATCH order, TEXSTALE, TEXREFRESH off; VRAMHEAD v2 dropped.
 
 ## Fix log (one row per change; test column = owner result)
 | date | repo | commit | what (switches) | default | CI | test |
@@ -769,3 +810,13 @@ Not ported: rygt7 10d6502 "Verbose logs" toggle, c47d3b4 HD UI and all DLSS / HD
 | 2026-11-25 | shadGT | 9ca471dd | Round 21 PRT-RBWAIT v2: every deferred fence by reason (data, order, background, direct hold) and site, races and loading, top 5 every 10 s (`RYGT_READBACK_WAIT_V2`, log only) | GT7 on | r20: RBWAIT never ran | pending |
 | 2026-11-25 | shadGT | 9ca471dd | Round 21 PRT-RBBATCH v2: fences deferred only for address order ride the held readback batch, same guard (`RYGT_READBACK_BATCH_ORDER`), owner OK 14:27 on | GT7 on (with RYGT_READBACK_BATCH), GT Sport off | r20: RBBATCH never ran | pending |
 | 2026-11-25 | shadGT + RyGT | 9ca471dd, 2733e81 | Round 21 `RYGT_DRIVER_CACHE_TRACK` default off (renderer and libkernel Open.cpp; 1 = on) | off | r20: no course paths | pending |
+| 2026-11-26 | shadGT | 20da1c5 | Round 22 port #137 FIX-SGT-158: replaced and stale pictures freed after 4 unused frames (`RYGT_FREE_SUPERSEDED`, upstream `SHADGT_FREE_SUPERSEDED_TARGETS`) | GT7 on | ci pending | pending |
+| 2026-11-26 | shadGT | 20da1c5 | Round 22 port #122 FIX-GT7-195: reads past per-frame memory cut (`RYGT_PERFRAME_READ_CUT`) | GT7 on | ci pending | pending |
+| 2026-11-26 | shadGT | 20da1c5 | Round 22 port #124 FIX-GT7-196: reads past culling block cut 64 MB after it (`RYGT_LISTED_READ_CUT`) | GT7 on | ci pending | pending |
+| 2026-11-26 | shadGT | 20da1c5 | Round 22 port #123 FIX-SGT-140: out of device memory frees, waits, skips (`RYGT_OOM_RECOVER`) | GT7 on | ci pending | pending |
+| 2026-11-26 | shadGT | 20da1c5 | Round 22 port #125 FIX-SGT-141: AVX fault save areas thread-local (`RYGT_FAULT_XSTATE_TLS`) | on (both games) | ci pending | pending |
+| 2026-11-26 | shadGT | 20da1c5 | Round 22 port #141 PERF-SGT-167: read-only sampled depth stays GENERAL (`RYGT_DEPTH_READ_IN_GENERAL`) | GT7 on | ci pending | pending |
+| 2026-11-26 | shadGT | 20da1c5 | Round 22 PRT-GPUPIC + PRT-TEXALIAS: GPU pictures let go and made again, textures over live GPU pictures, undrawn GPU pictures, VRAMREL2/VRAMTRIM 10 s counts (`RYGT_GPU_PIC_LOG`, log only) | GT7 on | ci pending | pending |
+| 2026-11-26 | shadGT | 20da1c5 | Round 22 PRT-VMAFRAG: VMA blocks/free per pool every 10 s, empty blocks freed over budget (`RYGT_VMA_FRAG`) | GT7 on | ci pending | pending |
+| 2026-11-26 | shadGT | 20da1c5 | Round 22 PRT-FILLTRIM: fill pattern buffers cut to 64 MB over budget (`RYGT_FILL_PATTERN_TRIM`) | GT7 on | ci pending | pending |
+| 2026-11-26 | shadGT | 20da1c5 | Round 22 defaults: `RYGT_READBACK_BATCH_ORDER`, `RYGT_TEX_STALE_LOG`, `RYGT_TEX_REFRESH` off (1 = on) | off | ci pending | pending |
